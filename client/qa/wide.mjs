@@ -1,0 +1,17 @@
+import { chromium } from "@playwright/test";
+import { mkdirSync } from "node:fs";
+mkdirSync("qa/shots", { recursive: true });
+const browser = await chromium.launch();
+const page = await browser.newPage({ viewport: { width: 2000, height: 1120 } });
+await page.goto("http://127.0.0.1:8000/entrar", { waitUntil: "networkidle" });
+await page.evaluate(() => localStorage.setItem("basis.theme", "dark"));
+await page.goto("http://127.0.0.1:8000/entrar", { waitUntil: "networkidle" });
+await page.fill('input[type="email"]', process.env.E);
+await page.fill('input[type="password"]', process.env.P);
+await page.click('button[type="submit"]');
+await page.waitForURL("**/hoje");
+await page.waitForTimeout(1200);
+await page.screenshot({ path: "qa/shots/wide-hoje.png" });
+const spot = await page.textContent("body");
+console.log("dollar sign present:", spot.includes("$"));
+await browser.close();

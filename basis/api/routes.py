@@ -191,6 +191,28 @@ def _cost_curve(conn, baseline_pips: float | None) -> dict:
     }
 
 
+def _instrument(conn) -> dict:
+    """
+    The quote currency comes from the instrument row rather than from splitting
+    the identifier, because the pair a screen prices in is a property of the
+    record and not of how its key happens to be spelled.
+    """
+    row = conn.execute(
+        "select id, base_ccy, quote_ccy, pip_size from basis.instrument where id = %s",
+        (INSTRUMENT,),
+    ).fetchone()
+
+    if row is None:
+        return {"id": INSTRUMENT, "base_ccy": None, "quote_ccy": None, "pip_size": None}
+
+    return {
+        "id": row["id"],
+        "base_ccy": row["base_ccy"],
+        "quote_ccy": row["quote_ccy"],
+        "pip_size": float(row["pip_size"]),
+    }
+
+
 @router.get("/today")
 def today(account=Depends(current_account), conn=Depends(connection)):
     moment = datetime.now(timezone.utc)
@@ -218,7 +240,7 @@ def today(account=Depends(current_account), conn=Depends(connection)):
     return {
         "as_of": moment,
         "market_open": report.open_market,
-        "instrument": INSTRUMENT,
+        "instrument": _instrument(conn),
         "spot": spot,
         "next_event": _next_event(conn),
         "cost": _cost_curve(conn, baseline),

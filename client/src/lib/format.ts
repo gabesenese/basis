@@ -35,6 +35,26 @@ export function signed(
   return body;
 }
 
+/*
+  EUR/USD quotes how many dollars buy one euro, so the symbol on a spot price
+  is the quote currency's and never the base's. It comes from the instrument
+  row rather than from the pair's name.
+*/
+const SYMBOLS: Record<string, string> = {
+  USD: "$",
+  EUR: "€",
+  GBP: "£",
+  JPY: "¥",
+  CHF: "Fr",
+  CAD: "$",
+  BRL: "R$",
+};
+
+export function currencySymbol(code: string | null | undefined): string {
+  if (!code) return "";
+  return SYMBOLS[code] ?? code;
+}
+
 export function price(language: Language, value: number | null | undefined): string {
   if (value === null || value === undefined) return "—";
   return value.toLocaleString(LOCALE[language], {

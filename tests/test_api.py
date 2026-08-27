@@ -112,7 +112,8 @@ def test_an_unsupported_language_is_refused(signed_in):
 def test_today_carries_a_next_event_and_a_health_reading(signed_in):
     body = signed_in.get("/api/today").json()
 
-    assert body["instrument"] == "EUR_USD"
+    assert body["instrument"]["id"] == "EUR_USD"
+    assert body["instrument"]["quote_ccy"] == "USD"
     assert {f["subject"] for f in body["health"]} == {"recorder", "ticks", "bars"}
     if body["next_event"]:
         assert body["next_event"]["scheduled_time"] > body["as_of"]

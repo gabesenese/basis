@@ -163,19 +163,35 @@ def run_recorder(instrument: str) -> None:
 
 
 def manage_account(action: str, email: str | None, name: str | None,
-                   language: str, timezone_name: str) -> None:
+                   language: str, timezone_name: str, password: str | None) -> None:
+    """
+    A supplied password lands in shell history, so the default is a generated
+    one printed once. Both are stored the same way, as a scrypt hash with its
+    own salt, and neither can be read back out.
+    """
     from basis import accounts
 
     with db.connect() as conn:
         if action == "list":
             for account in accounts.listing(conn):
                 print(
-                    f"  {account.id}  {account.email:<32} {account.display_name:<20} "
+                    f"  {account.id}  {account.email:<40} {account.display_name:<20} "
                     f"{account.language}  {account.timezone}"
                 )
             return
 
-        password = accounts.generate_password()
+        if action == "remove":
+            removed = conn.execute(
+                "delete from basis.account where email = %s", (email.strip().lower(),)
+            ).rowcount
+            conn.commit()
+            if not removed:
+                raise SystemExit(f"no account for {email}")
+            print(f"removed {email}")
+            return
+
+        generated = password is None
+        password = password or accounts.generate_password()
 
         if action == "add":
             account = accounts.create(
@@ -191,8 +207,9 @@ def manage_account(action: str, email: str | None, name: str | None,
 
     print()
     print(f"  password: {password}")
-    print()
-    print("  Shown once. It is stored only as a scrypt hash and cannot be read back.")
+    if generated:
+        print()
+        print("  Shown once. It is stored only as a scrypt hash and cannot be read back.")
 
 
 def run_refresh(instrument: str) -> None:
@@ -352,9 +369,10 @@ def main() -> None:
     daily.add_argument("--instrument", default="EUR_USD")
 
     account = sub.add_parser("account")
-    account.add_argument("action", choices=["add", "passwd", "list"])
+    account.add_argument("action", choices=["add", "passwd", "remove", "list"])
     account.add_argument("--email", default=None)
     account.add_argument("--name", default=None)
+    account.add_argument("--password", default=None)
     account.add_argument("--language", default="pt", choices=["pt", "en"])
     account.add_argument("--timezone", default="America/Sao_Paulo")
 
@@ -400,7 +418,10 @@ def main() -> None:
     elif args.command == "account":
         if args.action != "list" and not args.email:
             raise SystemExit("--email is required")
-        manage_account(args.action, args.email, args.name, args.language, args.timezone)
+        manage_account(
+            args.action, args.email, args.name, args.language, args.timezone,
+            args.password,
+        )
     elif args.command == "serve":
         import uvicorn
 

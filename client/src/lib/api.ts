@@ -64,10 +64,17 @@ export type CostPoint = {
   basis: string;
 };
 
+export type Instrument = {
+  id: string;
+  base_ccy: string | null;
+  quote_ccy: string | null;
+  pip_size: number | null;
+};
+
 export type Today = {
   as_of: string;
   market_open: boolean;
-  instrument: string;
+  instrument: Instrument;
   spot: {
     bid: number;
     ask: number;

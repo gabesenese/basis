@@ -77,10 +77,17 @@ export function Shell({ children }: { children: React.ReactNode }) {
   const navigate = useNavigate();
   const { signOut } = useSession();
 
+  /*
+    The shell fills the viewport rather than sitting in a fixed column. On a
+    wide monitor a centred 1440 leaves two dead bands and pushes the rail into
+    the middle of the screen, where a persistent navigation has no business
+    being. Reading width is capped per screen instead, on the prose that needs
+    it, so extra width goes to more columns and never to longer lines.
+  */
   return (
     <div className="lattice min-h-dvh">
-      <div className="mx-auto flex min-h-dvh max-w-[1440px]">
-        <aside className="sticky top-0 hidden h-dvh w-[236px] shrink-0 flex-col border-r border-line bg-surface md:flex">
+      <div className="flex min-h-dvh">
+        <aside className="sticky top-0 hidden h-dvh w-[236px] shrink-0 flex-col border-r border-line bg-surface md:flex 2xl:w-[268px]">
           <div className="border-b border-line px-6 py-5">
             <Wordmark />
           </div>
@@ -146,7 +153,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
 
         <div className="flex min-w-0 flex-1 flex-col">
           <header className="sticky top-0 z-10 border-b border-line bg-surface">
-            <div className="flex items-center justify-between gap-4 px-4 py-3 sm:px-6">
+            <div className="mx-auto flex w-full max-w-[1680px] items-center justify-between gap-4 px-4 py-3 sm:px-6">
               <div className="md:hidden">
                 <Wordmark />
               </div>
@@ -170,7 +177,9 @@ export function Shell({ children }: { children: React.ReactNode }) {
             </nav>
           </header>
 
-          <main className="min-w-0 flex-1 px-4 py-6 sm:px-6 sm:py-7">{children}</main>
+          <main className="min-w-0 flex-1 px-4 py-6 sm:px-6 sm:py-7">
+            <div className="mx-auto w-full max-w-[1680px]">{children}</div>
+          </main>
 
           <footer className="border-t border-line bg-surface px-4 py-4 sm:px-6 md:hidden">
             <div className="text-[13px] text-ink">{account?.display_name}</div>

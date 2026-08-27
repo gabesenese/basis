@@ -57,8 +57,8 @@ export function CostBars({
   const { ref, width } = useMeasure<HTMLDivElement>();
   const [hover, setHover] = useState<number | null>(null);
 
-  const height = 208;
-  const margin = { top: 12, right: 12, bottom: 30, left: 40 };
+  const height = 268;
+  const margin = { top: 14, right: 12, bottom: 32, left: 44 };
   const plotWidth = Math.max(width - margin.left - margin.right, 10);
   const plotHeight = height - margin.top - margin.bottom;
 

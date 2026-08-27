@@ -1,8 +1,28 @@
 # Basis
 
-Event-driven probability engine for EUR/USD. Two users, one instrument, no
-customers. Every forecast is scored against the coin flip and most days the
-honest output is no trade.
+A daily day-trading signal for EUR/USD, produced by digesting public
+information. Two users, one instrument, no customers.
+
+**Direction set on 2026-08-26: the signal is mandatory and daily.** Every
+trading session gets a direction, an entry, an invalidation, a target and an
+hour to be flat, published before the New York open. This replaces the earlier
+framing, which emitted only when a threshold was cleared and expected silence on
+most days.
+
+The cost of that decision is stated rather than hidden. A system obliged to
+speak every day will speak on days it has nothing, so its Brier score will be
+worse than one allowed to stay quiet. What keeps it honest is that **every
+signal carries its own calibrated probability and its own scorecard**. A day
+with no edge produces a signal near 0.50 and says so, and the execution record
+is separate from the signal, so taking the trade stays a human decision.
+
+Every forecast is still scored against the coin flip. That is the whole point of
+scoring: a signal that cannot beat a coin is a signal that should not be traded,
+and the platform's job is to say which is which rather than to look confident.
+
+Three sources feed it, and all three must be public and verifiable: the price
+record itself, read technically; the scheduled event calendar with its
+expectations; and the text of what institutions and the press actually publish.
 
 Not a business. That is a scoping decision, not a disclaimer: no multi-tenancy,
 no billing, no roles, no onboarding. Two accounts, one shared canonical record,
@@ -60,6 +80,76 @@ Verified by real calls during Phase 0.
 | Intraday euro rates | unresolved | Schatz or Euribor futures, for the rates versus spot divergence | paid, small |
 
 Two gaps carry real consequences and are tracked under Open decisions.
+
+## The daily trade
+
+Fixed so that a signal, a backtest and a scorecard all describe the same thing.
+Every one of these is a default chosen on 2026-08-26 and changeable, but never
+silently: changing one invalidates every score measured under the old one.
+
+| | |
+|---|---|
+| Published | 07:00 New York, before the New York open |
+| Entry | the mid at publication, crossed at the real ask to buy and bid to sell |
+| Invalidation | 1.0 average true range from entry |
+| Target | 1.5 average true range from entry |
+| Flat by | 16:00 New York, whatever has happened |
+| Session studied | London and New York, where the book is deep enough to pay the spread |
+
+Outcome is whichever of invalidation and target the price reaches first, read
+off one minute bars, and the close at the flat hour when it reaches neither.
+Cost is charged at the measured spread, not assumed away, because Phase 1a
+already showed the venue quotes 1.5 pips at rest and far more around a release.
+
+A minute that holds both levels is resolved as the loss. A bar cannot say which
+of its own extremes came first, and any other convention flatters the backtest
+exactly on the violent days a day trader cares about.
+
+The multiples are sized on the session range and not on the daily range. Read
+first against the daily average true range of 71 pips, 92.6 percent of sessions
+reached neither level inside the nine hours and the definition stopped
+describing a day trade. The session average true range is 54.9 pips, which puts
+the invalidation near 27 pips and the target near 41.
+
+Measured across the whole sweep, on 933 sessions from 2023-01-19: tighter levels
+resolve more often and are worth less. At 1.00 and 1.50 only 16 percent resolve
+and perfect foresight is worth 24.5 pips a session; at 0.25 and 0.375, 95
+percent resolve and perfect foresight is worth 10.5. At the chosen 0.50 and
+0.75, 58 percent resolve and perfect foresight is worth 20.3 pips. That last
+figure is the ceiling every later claim of skill is measured against.
+
+### What technical reading alone is worth
+
+Measured before building anything on top of it, because a baseline discovered
+afterwards is a baseline chosen to flatter.
+
+A coin loses about 1.5 pips a session at every level sizing tried, which is the
+spread and nothing else. Eight ordinary technical rules were scored against it:
+always long, always short, follow London, fade London, follow the prior day,
+follow five day momentum, above the pivot, and the Asian range breakout. Every
+one of them loses, between 0.60 and 1.74 pips a session, and every confidence
+interval covers both zero and the coin. Picking the better side landed between
+47.9 and 52.1 percent.
+
+Then a real model, walk forward with no look ahead, over all sixteen features,
+warmed on 250 sessions and scored on the remaining 647. Logistic regression
+returns -3.24 pips a session, interval -5.25 to -1.23, side accuracy 48.7
+percent, Brier 0.2581. Gradient boosting returns -2.49 pips, interval -4.52 to
+-0.46, accuracy 48.2 percent, Brier 0.2712. Both are worse than the coin's
+-1.53, and both Brier scores are worse than the 0.2500 a coin scores by
+definition.
+
+So the finding is not that technical reading is weak here. It is that fitting
+these features to this horizon produces negative skill out of sample, which is
+what fitting noise looks like. That is one feature set and two model families on
+one instrument at one horizon, and it does not condemn technical analysis in
+general. It does say the daily signal cannot rest on it.
+
+The mechanism that did measure, in Phase 2, was information: repricing across a
+rate announcement explains 37 percent of the two hour move, with the sign theory
+asks for and robust to dropping any meeting. Technical features stay in the
+engine as regime and as level geometry, which is what they are good for. The
+direction has to come from the information layer.
 
 ## Phases
 

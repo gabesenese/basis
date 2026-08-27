@@ -11,7 +11,15 @@ import {
   Stat,
 } from "../components/primitives";
 import { CostBars } from "../components/charts";
-import { age, countdown, dateTime, eventName, number, price } from "../lib/format";
+import {
+  age,
+  countdown,
+  currencySymbol,
+  dateTime,
+  eventName,
+  number,
+  price,
+} from "../lib/format";
 
 function Countdown({ target }: { target: string }) {
   const [now, setNow] = useState(() => new Date());
@@ -112,7 +120,12 @@ export function Today() {
       </Card>
     );
 
-  const { spot, next_event: next, cost } = data;
+  const { spot, next_event: next, cost, instrument } = data;
+  const symbol = currencySymbol(instrument.quote_ccy);
+  const pair =
+    instrument.base_ccy && instrument.quote_ccy
+      ? `${instrument.base_ccy}/${instrument.quote_ccy}`
+      : instrument.id;
 
   return (
     <div className="space-y-6">
@@ -161,23 +174,43 @@ export function Today() {
             {spot && (
               <div>
                 <div className="flex items-center justify-between pb-2">
-                  <span className="eyebrow">{t("spot")} · EUR/USD</span>
+                  <span className="eyebrow">
+                    {t("spot")} · {pair}
+                  </span>
                   <Provenance kind="measured">{t("measured")}</Provenance>
                 </div>
-                <div className="num text-[30px] leading-none text-ink">
+                <div className="num flex items-baseline gap-1.5 text-[34px] leading-none text-ink">
+                  <span className="text-[20px] text-faint">{symbol}</span>
                   {price(language, spot.mid)}
                 </div>
-                <div className="num mt-2 flex gap-4 text-[12px] text-muted">
-                  <span>
-                    {t("bid")} {price(language, spot.bid)}
-                  </span>
-                  <span>
-                    {t("ask")} {price(language, spot.ask)}
-                  </span>
+                {/*
+                  Bid, ask and spread carry the same weight as each other and
+                  sit on their own baseline. They are what an order actually
+                  meets, so they are read, not glanced at.
+                */}
+                <div className="mt-4 grid grid-cols-3 gap-3 border-t border-line pt-3">
+                  <div>
+                    <div className="eyebrow pb-1">{t("bid")}</div>
+                    <div className="num text-[17px] leading-none text-ink">
+                      <span className="text-[12px] text-faint">{symbol}</span>
+                      {price(language, spot.bid)}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="eyebrow pb-1">{t("ask")}</div>
+                    <div className="num text-[17px] leading-none text-ink">
+                      <span className="text-[12px] text-faint">{symbol}</span>
+                      {price(language, spot.ask)}
+                    </div>
+                  </div>
                   {spot.spread_pips !== null && (
-                    <span>
-                      {t("spread")} {number(language, spot.spread_pips, 2)}
-                    </span>
+                    <div>
+                      <div className="eyebrow pb-1">{t("spread")}</div>
+                      <div className="num text-[17px] leading-none text-ink">
+                        {number(language, spot.spread_pips, 2)}
+                        <span className="ml-1 text-[11px] text-muted">pips</span>
+                      </div>
+                    </div>
                   )}
                 </div>
                 <div className="num mt-1.5 text-[11px] text-faint">
@@ -189,7 +222,12 @@ export function Today() {
         </div>
       </Card>
 
-      <div className="grid gap-6 lg:grid-cols-[1.45fr_1fr]">
+      {/*
+        items-start, so the health card is only as tall as the three readings
+        it holds. Stretching it to match the chart beside it would open a void
+        inside a card, which reads as missing content rather than as spacing.
+      */}
+      <div className="grid items-start gap-6 lg:grid-cols-[1.6fr_1fr] 2xl:grid-cols-[2fr_1fr]">
         <Card>
           <CardHead
             title={t("costOfTrading")}
