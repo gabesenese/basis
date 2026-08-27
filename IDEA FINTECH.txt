@@ -1,0 +1,7 @@
+IDEA FINTECH
+
+create platform that uses claude's financial models, it will learn and analyze news, market sentiment, we will have a threshold, where if it passes, it will gives us a signal that we should invest in the specific instrument, 
+
+Get Access to data real time
+
+Fees? Trading fees?

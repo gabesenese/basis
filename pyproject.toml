@@ -1,0 +1,39 @@
+[project]
+name = "basis"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = [
+    "httpx>=0.27",
+    "psycopg[binary]>=3.2",
+    "pydantic>=2.7",
+    "pydantic-settings>=2.3",
+    "python-dateutil>=2.9",
+    "tzdata>=2024.1",
+    "duckdb>=1.0",
+    "pytz>=2024.1",
+    "pandas>=2.2",
+    "pyarrow>=16.0",
+    "scipy>=1.13",
+    "statsmodels>=0.14",
+    "openpyxl>=3.1",
+    "fastapi>=0.115",
+    "uvicorn>=0.30",
+    "itsdangerous>=2.2",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.2", "pytest-asyncio>=0.23"]
+
+[tool.setuptools.packages.find]
+include = ["basis*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-m 'not live'"
+markers = [
+    "live: hits a third party feed, run explicitly with -m live",
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"

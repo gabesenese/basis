@@ -1,0 +1,21 @@
+services:
+  postgres:
+    image: postgres:18-alpine
+    container_name: basis_postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: basis
+      POSTGRES_DB: basis
+    ports:
+      - "5433:5432"
+    volumes:
+      - basis_pgdata:/var/lib/postgresql
+      - ./db/schema:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d basis"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  basis_pgdata:

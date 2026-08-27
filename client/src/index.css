@@ -1,0 +1,142 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
+/*
+  Colour in Basis encodes epistemic status and nothing else.
+
+  --measured  an observed fact
+  --modelled  a number derived under an assumption that is stated beside it
+
+  There is deliberately no red and no green anywhere. Direction is carried by
+  the sign of a numeral and by which side of the baseline a mark sits on. The
+  product's whole claim is that most days the honest answer is no trade, and
+  red-green is the grammar of urgency that argues with that on every screen.
+
+  Both pairs pass the lightness band, chroma floor, CVD separation, normal
+  vision floor and contrast checks against their own surface. Dark is stepped
+  for dark, not flipped from light.
+*/
+:root {
+  --ground: #e9ecef;
+  --surface: #ffffff;
+  --surface-sunken: #f2f4f7;
+  --ink: #101418;
+  --ink-muted: #626c78;
+  --ink-faint: #98a1ac;
+  --line: #d3d9e0;
+  --line-strong: #b9c2cc;
+  --measured: #1d4e9c;
+  --measured-wash: #1d4e9c1f;
+  --modelled: #a76b12;
+  --modelled-wash: #a76b121f;
+  --rule: #101418;
+  --lattice: #1014180a;
+  --focus: #1d4e9c;
+}
+
+[data-theme="dark"] {
+  --ground: #0b0e12;
+  --surface: #12161c;
+  --surface-sunken: #0e1217;
+  --ink: #e4e9ef;
+  --ink-muted: #828d9b;
+  --ink-faint: #5c6673;
+  --line: #212933;
+  --line-strong: #303a47;
+  --measured: #5586d2;
+  --measured-wash: #5586d229;
+  --modelled: #b8842e;
+  --modelled-wash: #b8842e29;
+  --rule: #e4e9ef;
+  --lattice: #e4e9ef0a;
+  --focus: #5586d2;
+}
+
+@theme inline {
+  --color-ground: var(--ground);
+  --color-surface: var(--surface);
+  --color-sunken: var(--surface-sunken);
+  --color-ink: var(--ink);
+  --color-muted: var(--ink-muted);
+  --color-faint: var(--ink-faint);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-measured: var(--measured);
+  --color-modelled: var(--modelled);
+  --color-rule: var(--rule);
+
+  --font-display: "Newsreader", Georgia, serif;
+  --font-sans: "IBM Plex Sans", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+}
+
+@layer base {
+  html {
+    color-scheme: light;
+  }
+
+  [data-theme="dark"] {
+    color-scheme: dark;
+  }
+
+  body {
+    background-color: var(--ground);
+    color: var(--ink);
+    font-family: var(--font-sans);
+    font-size: 14px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /*
+    The lattice is the layout gutter drawn at 3 percent. Page structure and
+    chart gridlines are the same 24px rhythm, so a reading taken off a chart
+    lands on the same lines the interface is built on.
+  */
+  .lattice {
+    background-image:
+      linear-gradient(to right, var(--lattice) 1px, transparent 1px),
+      linear-gradient(to bottom, var(--lattice) 1px, transparent 1px);
+    background-size: 24px 24px;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: 2px;
+    border-radius: 2px;
+  }
+
+  ::selection {
+    background: var(--measured-wash);
+  }
+
+  .num {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums slashed-zero;
+    font-feature-settings: "zero" 1;
+  }
+
+  .eyebrow {
+    font-family: var(--font-sans);
+    font-size: 10px;
+    font-weight: 500;
+    letter-spacing: 0.11em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+  }
+
+  .prose-read {
+    font-family: var(--font-display);
+    font-optical-sizing: auto;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
