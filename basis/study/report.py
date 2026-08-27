@@ -1,4 +1,4 @@
-from basis.study import answer
+from basis.study import answer, technical_gate
 
 TITLES = {
     "constrained": "Constrained surprise, actual minus expected, standardised.",
@@ -76,3 +76,45 @@ def render(conn) -> None:
     )
     print()
     print("* marks a slope whose robust and bootstrap intervals both exclude zero.")
+
+
+def render_technical(conn) -> None:
+    """
+    What technical reading alone is worth, measured before anything is built on
+    top of it. A baseline discovered afterwards is a baseline chosen to flatter.
+    """
+    result = technical_gate.assemble(conn)
+    trade = result["trade"]
+
+    print("Technical gate. Does reading the price alone beat the coin, out of")
+    print("sample, after the spread.")
+    print()
+    print(
+        f"Sessions {result['sessions']}, invalidation {trade['stop_atr']} and target "
+        f"{trade['target_atr']} of the session range, warmed on {trade['warmup']}"
+    )
+    print(
+        f"Perfect foresight {result['perfect_foresight_pips']:6.2f} pips a session, "
+        f"worst choice {result['worst_choice_pips']:6.2f}"
+    )
+    print()
+
+    coin = result["coin"]
+    print(f"{'coin':<22} {coin['mean_pips']:6.2f} pips  "
+          f"[{coin['low']:6.2f}, {coin['high']:6.2f}]   Brier {coin['brier']:.4f}")
+    print()
+
+    print("Ordinary rules, scored on every session")
+    for name, rule in result["naive_rules"].items():
+        print(f"  {name:<20} {rule['mean_pips']:6.2f} pips  "
+              f"[{rule['low']:6.2f}, {rule['high']:6.2f}]   "
+              f"side {100 * rule['side_accuracy']:4.1f}%")
+    print()
+
+    print(f"Walk forward over {len(result['features'])} features, no look ahead")
+    for name, fit in result["fits"].items():
+        beat = "beats the coin" if fit["mean_pips"] > coin["mean_pips"] else "loses to the coin"
+        print(f"  {name:<20} {fit['mean_pips']:6.2f} pips  "
+              f"[{fit['low']:6.2f}, {fit['high']:6.2f}]   "
+              f"side {100 * fit['side_accuracy']:4.1f}%   "
+              f"Brier {fit['brier']:.4f}   {beat}")

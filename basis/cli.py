@@ -46,6 +46,42 @@ def collect_mpt(path: str | None) -> None:
     print(f"atlanta mpt: {len(rows)} distributions, {written} new")
 
 
+def collect_fed_text(since: date | None) -> None:
+    from basis.sources import fed_text
+
+    with db.connect() as conn:
+        rows = conn.execute(
+            """
+            select distinct on (event_key) event_key, scheduled_time
+            from basis.calendar_event
+            where event_code = 'FOMC_DECISION' and scheduled_time < now()
+              and (%s::date is null or scheduled_time >= %s::date)
+            order by event_key, available_at desc
+            """,
+            (since, since),
+        ).fetchall()
+
+    decisions = sorted(row["scheduled_time"].date() for row in rows)
+    documents, missing = fed_text.collect(decisions)
+
+    with db.connect() as conn:
+        db.upsert_source(
+            conn,
+            fed_text.SOURCE_ID,
+            "text",
+            "Federal Reserve",
+            True,
+            "FOMC statements at the decision, minutes three weeks later",
+        )
+        written = fed_text.ingest(conn, documents)
+        conn.commit()
+
+    print(
+        f"fomc text: {len(decisions)} meetings, {len(documents)} documents, "
+        f"{written} new, {len(missing)} without a page"
+    )
+
+
 def collect_calendar() -> None:
     fomc_rows = fomc.to_calendar_rows(fomc.parse(fomc.fetch_page()))
     ecb_rows = ecb.to_calendar_rows(ecb.parse(ecb.fetch_page()))
@@ -160,6 +196,79 @@ def run_recorder(instrument: str) -> None:
             handle.write(f"\n{datetime.now(timezone.utc).isoformat()}\n")
             handle.write(traceback.format_exc())
         raise
+
+
+def _dry_run(pending: list[dict]) -> None:
+    """
+    Everything a paid run would do except the call. The character count is a
+    crude token proxy, deliberately: an exact count needs the API, and the
+    point of this command is to say what a run costs before anyone has a key.
+    """
+    import json
+
+    from basis.sources import claude_labeller
+
+    characters = sum(len(claude_labeller.PROMPT.format(body=d["body"])) for d in pending)
+    tokens = characters / 4
+
+    print(f"  model          {claude_labeller.MODEL} at effort {claude_labeller.EFFORT}")
+    print(f"  version        {claude_labeller.LABELLER_VERSION}")
+    print(f"  documents      {len(pending)}")
+    print(f"  input          about {tokens/1000:.0f}k tokens, roughly ${tokens/1e6*5:.2f}")
+    print()
+    print("  first request, verbatim except the document body:")
+    sample = claude_labeller.request_params("<document body>")
+    sample["messages"][0]["content"] = sample["messages"][0]["content"][:0] or "<prompt>"
+    print("   ", json.dumps(sample, indent=2).replace("\n", "\n    "))
+    print()
+    print("  set ANTHROPIC_API_KEY and drop --dry-run to run it")
+
+
+def run_labeller(document_type: str | None, limit: int | None, dry_run: bool) -> None:
+    import anthropic
+
+    from basis.sources import claude_labeller
+
+    with db.connect() as conn:
+        pending = claude_labeller.unlabelled(conn, document_type)
+
+    if limit:
+        pending = pending[:limit]
+
+    if not pending:
+        print(f"labeller {claude_labeller.LABELLER_VERSION}: nothing to label")
+        return
+
+    if dry_run:
+        print("dry run, nothing sent")
+        _dry_run(pending)
+        return
+
+    print(
+        f"labeller {claude_labeller.LABELLER_VERSION}: {len(pending)} documents "
+        f"with model {claude_labeller.MODEL}"
+    )
+
+    client = anthropic.Anthropic()
+    written = 0
+    failed = []
+
+    for document in pending:
+        try:
+            value = claude_labeller.label(document["body"], client)
+        except Exception as exc:
+            failed.append(f"{document['document_key']}: {type(exc).__name__}: {exc}")
+            continue
+
+        with db.connect() as conn:
+            written += claude_labeller.store(conn, document, value)
+            conn.commit()
+
+        print(f"  {document['document_key']} {value['policy_action']}")
+
+    print(f"labelled {written} of {len(pending)}")
+    for failure in failed:
+        print(f"  FAILED {failure}")
 
 
 def manage_account(action: str, email: str | None, name: str | None,
@@ -333,11 +442,14 @@ def show_spread_profile(baseline: float) -> None:
         print(f"  T{seconds:>+5}s   {estimate.pips:6.2f} pips   {estimate.provenance}")
 
 
-def run_study() -> None:
+def run_study(subject: str) -> None:
     from basis.study import report
 
     with db.connect() as conn:
-        report.render(conn)
+        if subject == "fomc":
+            report.render(conn)
+        else:
+            report.render_technical(conn)
 
 
 def main() -> None:
@@ -345,12 +457,19 @@ def main() -> None:
     sub = parser.add_subparsers(dest="command", required=True)
 
     collect = sub.add_parser("collect")
-    collect.add_argument("source", choices=["cftc", "calendar", "mpt"])
+    collect.add_argument("source", choices=["cftc", "calendar", "mpt", "fed-text"])
     collect.add_argument("--since", type=date.fromisoformat, default=None)
     collect.add_argument("--path", default=None)
 
     study = sub.add_parser("study")
-    study.add_argument("subject", choices=["fomc"])
+    study.add_argument("subject", choices=["fomc", "technical"])
+
+    labels = sub.add_parser("label")
+    labels.add_argument("subject", choices=["fomc"])
+    labels.add_argument("--type", dest="document_type", default=None,
+                        choices=["statement", "minutes"])
+    labels.add_argument("--limit", type=int, default=None)
+    labels.add_argument("--dry-run", action="store_true")
 
     spread = sub.add_parser("spread-profile")
     spread.add_argument("--baseline", type=float, default=1.5)
@@ -403,8 +522,12 @@ def main() -> None:
             collect_calendar()
         elif args.source == "mpt":
             collect_mpt(args.path)
-    elif args.command == "study" and args.subject == "fomc":
-        run_study()
+        elif args.source == "fed-text":
+            collect_fed_text(args.since)
+    elif args.command == "study":
+        run_study(args.subject)
+    elif args.command == "label" and args.subject == "fomc":
+        run_labeller(args.document_type, args.limit, args.dry_run)
     elif args.command == "spread-profile":
         show_spread_profile(args.baseline)
     elif args.command == "stream" and args.source == "oanda":

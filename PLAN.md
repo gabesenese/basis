@@ -76,6 +76,7 @@ Verified by real calls during Phase 0.
 | NY Fed Survey of Market Expectations | to wire | rate expectation distributions, 8x/year, PDF since 2011 | free |
 | ECB Survey of Monetary Analysts | to wire | rate expectation distributions, 8x/year, PDF since 2021 | free |
 | FRED and ALFRED | to wire | macro actuals with vintages, ALFRED for anything historical | free, key |
+| FOMC statements and minutes | wired | full text, statement at the decision, minutes three weeks later | free |
 | Consensus for data releases | unresolved | consensus for CPI, payrolls, PMI | quote pending |
 | Intraday euro rates | unresolved | Schatz or Euribor futures, for the rates versus spot divergence | paid, small |
 
@@ -123,13 +124,16 @@ figure is the ceiling every later claim of skill is measured against.
 Measured before building anything on top of it, because a baseline discovered
 afterwards is a baseline chosen to flatter.
 
-A coin loses about 1.5 pips a session at every level sizing tried, which is the
-spread and nothing else. Eight ordinary technical rules were scored against it:
-always long, always short, follow London, fade London, follow the prior day,
-follow five day momentum, above the pivot, and the Asian range breakout. Every
-one of them loses, between 0.60 and 1.74 pips a session, and every confidence
-interval covers both zero and the coin. Picking the better side landed between
-47.9 and 52.1 percent.
+Reproduce all of this with `basis study technical`. The figures below are that
+command's output over the 897 sessions where every feature is defined, which is
+the same sample the models are scored on.
+
+A coin loses 1.53 pips a session, which is the spread and nothing else. Eight
+ordinary technical rules were scored against it: always long, always short,
+follow London, fade London, follow the prior day, follow five day momentum,
+above the pivot, and the Asian range breakout. Every one of them loses, between
+0.60 and 2.02 pips a session, and every confidence interval covers the coin.
+Picking the better side landed between 48.0 and 52.0 percent.
 
 Then a real model, walk forward with no look ahead, over all sixteen features,
 warmed on 250 sessions and scored on the remaining 647. Logistic regression
@@ -235,6 +239,48 @@ than 14:00. Both gaps bite in this phase, not before.
 The event universe must be wider than central bank decisions. Rate decisions
 alone give roughly 8 events per year per bank, which cannot estimate anything.
 CPI, payrolls, flash PMI and retail sales are what make the sample usable.
+
+### The text lane
+
+Collected: 29 statements and 29 sets of minutes covering every FOMC meeting
+from 2023-02-01, straight from the Fed. The statement is public at the decision,
+14:00 Eastern; the minutes follow three weeks later at the same hour, pushed to
+the next business day rather than credited early when that date falls on a
+holiday. Nothing in the corpus claims to have been published before its own
+meeting.
+
+This is the answer to what broke the Phase 2 gate. The decision itself took four
+values across 26 meetings and moved eight times; the language of the same 26
+meetings varies enormously, and it costs nothing.
+
+Two rules make the labeller usable rather than merely clever. **Every field must
+cite a verbatim quote from the document.** A label that cannot point at the text
+came from somewhere else, and for statements published between 2023 and 2026
+that somewhere else is very likely the model's own training data, which knows
+what the market did next. And **the labeller extracts, it does not judge**:
+there is no hawkish or dovish field, deliberately. That reading is exactly where
+hindsight would enter. What the statement said about inflation is checkable;
+whether it was a surprise is for price to answer.
+
+The version pins model, prompt and schema together, and `input_sha256` records
+what actually determined each answer. Changing any of the three is a change of
+measurement, so it takes a new version and obliges relabelling the whole history
+before the new version is used in a study. `available_at` mirrors publication
+and never the instant the labeller ran.
+
+**Not yet run, by decision.** The labeller waits on an API key, so the whole
+path around it is proven without one. A stub of the Messages API stands in front
+of the real SDK, which establishes that the parameters are accepted, that the
+schema and model reach the wire intact, that a refusal and a truncated answer
+each raise instead of storing half a label, and that the same document produces
+byte-identical requests. Storage is proven against the real database: a label
+computed today is readable at the instant its document was published and
+invisible a second earlier, relabelling at the same version writes nothing, and
+two versions coexist rather than overwriting. What is unproven is the model's
+answer, which is the only part a key can settle.
+
+`basis label fomc --dry-run` prints the request a paid run would send, verbatim,
+and what it would cost. The whole corpus is 376k input tokens, about $1.88.
 
 Done when: the study answers, in writing, whether standardised surprise predicts
 the T+2h move at all, with a confidence interval. This is the gate for
