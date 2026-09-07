@@ -7,6 +7,7 @@ from pathlib import Path
 
 from basis.lanes import ticks as tick_lane
 from basis.lanes.health import HEARTBEAT_INTERVAL, Heartbeat
+from basis.lanes.quote import QuoteWriter
 from basis.lanes.tick_writer import TickWriter
 from basis.sources import oanda_stream
 
@@ -48,11 +49,13 @@ class Recorder:
         instrument: str,
         heartbeat_path,
         log_path,
+        quote_path=None,
         flush_seconds: int = SERVICE_FLUSH_SECONDS,
     ):
         self.root = Path(root)
         self.instrument = instrument
         self.heartbeat_path = Path(heartbeat_path)
+        self.quote_path = Path(quote_path) if quote_path else None
         self.flush_seconds = flush_seconds
         self.log = build_logger(log_path)
         self.stopping = threading.Event()
@@ -118,6 +121,7 @@ class Recorder:
             self.instrument,
             flush_seconds=self.flush_seconds,
         )
+        quote = QuoteWriter(self.quote_path) if self.quote_path else None
         rolled = date.min
 
         try:
@@ -126,6 +130,8 @@ class Recorder:
                     [self.instrument], stop=should_stop, on_reconnect=on_reconnect
                 ):
                     writer.add(tick)
+                    if quote is not None:
+                        quote.offer(tick)
                     self.heartbeat.ticks_received += 1
                     self.heartbeat.ticks_written = writer.written
                     self.heartbeat.last_tick_at = tick["ts"]

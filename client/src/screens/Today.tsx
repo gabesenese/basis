@@ -97,9 +97,18 @@ function Health({ findings }: { findings: TodayPayload["health"] }) {
   );
 }
 
+/*
+  The recorder flushes ticks at most every two minutes, so reading faster than
+  this would ask the API for an answer it cannot have changed yet. What this
+  interval really buys is that the age of every reading on the screen is
+  computed by the server at the moment it is shown, rather than at the moment
+  the tab was opened.
+*/
+const REFRESH_MS = 20_000;
+
 export function Today() {
   const { language, timezone, t } = useSession();
-  const { data, error, reload } = useResource<TodayPayload>("/today");
+  const { data, error, stale, reload } = useResource<TodayPayload>("/today", REFRESH_MS);
 
   if (error)
     return (
@@ -271,7 +280,16 @@ export function Today() {
         <Card>
           <CardHead title={t("dataHealth")} />
           <Health findings={data.health} />
-          <p className="num border-t border-line px-5 py-3 text-[11px] text-faint">
+          <p
+            role="status"
+            className="num flex flex-wrap items-center gap-x-2 border-t border-line px-5 py-3 text-[11px] text-faint"
+          >
+            {stale && (
+              <span aria-hidden className="inline-block size-1.5 bg-modelled" />
+            )}
+            <span className={stale ? "text-modelled" : undefined}>
+              {stale ? t("refreshFailed") : t("updated")}
+            </span>
             {dateTime(language, timezone, data.as_of)}
           </p>
         </Card>

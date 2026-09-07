@@ -7,6 +7,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 
+from basis.api.equities import router as equities_router
 from basis.api.routes import router
 from basis.config import settings
 
@@ -14,15 +15,37 @@ DEV_ORIGINS = ["http://localhost:5173", "http://127.0.0.1:5173"]
 
 app = FastAPI(title="Basis", docs_url=None, redoc_url=None, openapi_url=None)
 
-"""
-A generated secret means restarting the server signs both accounts out. For a
-tool with two users that is a fair trade against a secret committed to the
-repository, and setting BASIS_SESSION_SECRET makes sessions survive a restart
-whenever that becomes annoying.
-"""
+def _session_secret() -> str:
+    """
+    The key that signs session cookies, kept across restarts.
+
+    Generating one at boot was the earlier trade, and it cost more than it was
+    worth: every restart invalidated every cookie, so anyone reading the running
+    app was signed out each time the server was touched. Editing a file that
+    someone is looking at should not end their session.
+
+    So it is generated once and kept in var/, which is outside the repository
+    and never committed. BASIS_SESSION_SECRET still wins when it is set, and
+    deleting the file is how you deliberately sign everyone out.
+    """
+    if settings.basis_session_secret:
+        return settings.basis_session_secret
+
+    kept = Path(settings.basis_var_root) / "session.key"
+    if kept.exists():
+        stored = kept.read_text(encoding="utf-8").strip()
+        if stored:
+            return stored
+
+    minted = secrets.token_hex(32)
+    kept.parent.mkdir(parents=True, exist_ok=True)
+    kept.write_text(minted, encoding="utf-8")
+    return minted
+
+
 app.add_middleware(
     SessionMiddleware,
-    secret_key=settings.basis_session_secret or secrets.token_hex(32),
+    secret_key=_session_secret(),
     session_cookie="basis_session",
     https_only=False,
     same_site="lax",
@@ -38,6 +61,7 @@ app.add_middleware(
 )
 
 app.include_router(router)
+app.include_router(equities_router)
 
 
 def _mount_client() -> None:

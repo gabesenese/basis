@@ -1,11 +1,20 @@
 import argparse
 from datetime import date, datetime, timezone
 
-from basis import db
+from basis import db, instruments
 from basis.lanes import bars as bars_lane
 from basis.lanes import reconcile as reconcile_lane
 from basis.lanes import calendar as calendar_lane
-from basis.sources import atlanta_mpt, cftc, ecb, fomc, oanda, oanda_stream
+from basis.sources import (
+    atlanta_mpt,
+    cftc,
+    ecb,
+    edgar,
+    fomc,
+    oanda,
+    oanda_stream,
+    yahoo,
+)
 
 
 def collect_cftc(since: date | None) -> None:
@@ -96,6 +105,81 @@ def collect_calendar() -> None:
     print(f"calendar: {len(fomc_rows)} FOMC, {len(ecb_rows)} ECB, {written} new")
 
 
+def collect_edgar_index() -> None:
+    """
+    The whole ticker to company map, which is what search reads. One request
+    for every listed name, so it is a minute of work once a quarter rather than
+    a lookup on the path of a keystroke.
+    """
+    with db.connect() as conn, edgar.open_client() as client:
+        db.upsert_source(
+            conn,
+            edgar.SOURCE_ID,
+            "text",
+            "SEC EDGAR",
+            True,
+            "filings with acceptance timestamps, item 2.02 marks a results release",
+        )
+        conn.commit()
+
+        rows = edgar.company_names(client)
+        written = edgar.ingest_companies(conn, rows)
+        conn.commit()
+
+    print(f"edgar index: {len(rows)} empresas lidas, {written} gravadas")
+
+
+def collect_edgar(ticker: str, limit: int) -> None:
+    """
+    One company's earnings releases, as calendar events and as the text of the
+    exhibit that carries the numbers. The SEC asks callers to stay under ten
+    requests a second and to declare a contact, so the pause is deliberate and
+    SEC_CONTACT belongs in .env before any sustained run.
+    """
+    import time
+
+    ticker = ticker.upper()
+    events = 0
+    documents = 0
+
+    with db.connect() as conn, edgar.open_client() as client:
+        db.upsert_source(
+            conn,
+            edgar.SOURCE_ID,
+            "text",
+            "SEC EDGAR",
+            True,
+            "filings with acceptance timestamps, item 2.02 marks a results release",
+        )
+        conn.commit()
+
+        found = edgar.tickers(client)
+        if ticker not in found:
+            print(f"edgar: ticker {ticker} desconhecido")
+            return
+
+        payload = edgar.submissions(client, found[ticker])
+        releases = edgar.earnings_releases(edgar.filings(payload))[:limit]
+        print(f"edgar {ticker}: {payload['name']}, {len(releases)} releases")
+
+        events = edgar.ingest_events(conn, releases)
+        conn.commit()
+
+        for release in releases:
+            body, filename = edgar.fetch_release(client, release)
+            written = edgar.ingest_document(conn, release, body)
+            documents += written
+            conn.commit()
+            mark = "novo" if written else "ja tinha"
+            print(
+                f"  {release['accepted_at']:%Y-%m-%d %H:%M} {filename:28} "
+                f"{len(body):>7} chars  {mark}"
+            )
+            time.sleep(0.15)
+
+    print(f"edgar {ticker}: {events} eventos novos, {documents} documentos novos")
+
+
 def backfill_oanda(instrument: str, granularity: str, start: date, end: date) -> None:
     from datetime import datetime, time, timezone
 
@@ -106,12 +190,7 @@ def backfill_oanda(instrument: str, granularity: str, start: date, end: date) ->
 
     with db.connect() as conn, oanda.open_client() as client:
         db.upsert_source(conn, oanda.SOURCE_ID, "price", "OANDA", False, "v20 practice")
-        conn.execute(
-            """
-            insert into basis.instrument values ('EUR_USD', 'EUR', 'USD', 0.0001)
-            on conflict (id) do nothing
-            """
-        )
+        instruments.ensure(conn)
         conn.commit()
 
         for page in oanda.backfill(client, instrument, granularity, begin, finish):
@@ -125,6 +204,50 @@ def backfill_oanda(instrument: str, granularity: str, start: date, end: date) ->
                 print(f"  {pages} paginas, {total} barras, ate {page['ts'].max()}")
 
     print(f"oanda {instrument} {granularity}: {pages} paginas, {total} barras novas")
+
+
+def backfill_yahoo(ticker: str, name: str, start: date, end: date) -> None:
+    """
+    Bars and corporate actions in one pass, because the actions are what say
+    which units the bars are in. Fetching them separately would leave a window
+    where the series is stored and nothing records how it was scaled.
+    """
+    ticker = ticker.upper()
+
+    with db.connect() as conn, yahoo.open_client() as client:
+        db.upsert_source(
+            conn,
+            yahoo.SOURCE_ID,
+            "price",
+            "Yahoo Finance",
+            False,
+            "unofficial chart endpoint, split-restated series, no service guarantee",
+        )
+        instruments.register_equity(conn, ticker, name or ticker)
+        conn.commit()
+
+        result = yahoo.fetch(client, ticker, start, end)
+
+        drift = yahoo.units_drift(conn, ticker, result)
+        if drift:
+            print(f"  aviso: {drift}")
+            print("  as barras armazenadas estao noutra escala, reescrita e decisao sua")
+            return
+
+        frame = yahoo.bars(result)
+        events = yahoo.actions(result)
+
+        written = yahoo.ingest_bars(conn, ticker, "D", frame)
+        recorded = yahoo.ingest_actions(conn, ticker, events)
+        conn.commit()
+
+    splits = [e for e in events if e["action_type"] == "split"]
+    span = f"{frame['ts'].min():%Y-%m-%d} a {frame['ts'].max():%Y-%m-%d}" if len(frame) else "vazio"
+    print(f"yahoo {ticker}: {len(frame)} barras ({span}), {written} novas")
+    print(f"  acoes corporativas: {recorded} novas de {len(events)}, {len(splits)} desdobramentos")
+    for event in splits:
+        ratio = event["numerator"] / event["denominator"]
+        print(f"    {event['effective_date']} desdobramento {ratio:g}:1")
 
 
 def run_reconcile(day: date, hours: list[int]) -> None:
@@ -188,6 +311,7 @@ def run_recorder(instrument: str) -> None:
             instrument,
             settings.recorder_heartbeat_path,
             settings.recorder_log_path,
+            settings.recorder_quote_path,
         ).run()
     except Exception:
         crash = Path(settings.basis_var_root) / "recorder-crash.log"
@@ -448,6 +572,8 @@ def run_study(subject: str) -> None:
     with db.connect() as conn:
         if subject == "fomc":
             report.render(conn)
+        elif subject == "cross":
+            report.render_cross(conn)
         else:
             report.render_technical(conn)
 
@@ -457,12 +583,17 @@ def main() -> None:
     sub = parser.add_subparsers(dest="command", required=True)
 
     collect = sub.add_parser("collect")
-    collect.add_argument("source", choices=["cftc", "calendar", "mpt", "fed-text"])
+    collect.add_argument(
+        "source",
+        choices=["cftc", "calendar", "mpt", "fed-text", "edgar", "edgar-index"],
+    )
+    collect.add_argument("--ticker", default=None)
+    collect.add_argument("--limit", type=int, default=40)
     collect.add_argument("--since", type=date.fromisoformat, default=None)
     collect.add_argument("--path", default=None)
 
     study = sub.add_parser("study")
-    study.add_argument("subject", choices=["fomc", "technical"])
+    study.add_argument("subject", choices=["fomc", "technical", "cross"])
 
     labels = sub.add_parser("label")
     labels.add_argument("subject", choices=["fomc"])
@@ -508,8 +639,14 @@ def main() -> None:
     check.add_argument("--hours", type=int, nargs="+", default=[9, 13, 16])
 
     fill = sub.add_parser("backfill")
-    fill.add_argument("source", choices=["oanda"])
-    fill.add_argument("--instrument", default="EUR_USD")
+    fill.add_argument("source", choices=["oanda", "yahoo"])
+    fill.add_argument("--ticker", default=None)
+    fill.add_argument("--name", default=None)
+    fill.add_argument(
+        "--instrument",
+        default="EUR_USD",
+        help="um id do registro, ou 'all' para a universo inteiro",
+    )
     fill.add_argument("--granularity", default="M1")
     fill.add_argument("--start", type=date.fromisoformat, required=True)
     fill.add_argument("--end", type=date.fromisoformat, required=True)
@@ -520,6 +657,12 @@ def main() -> None:
             collect_cftc(args.since)
         elif args.source == "calendar":
             collect_calendar()
+        elif args.source == "edgar":
+            if not args.ticker:
+                raise SystemExit("collect edgar exige --ticker")
+            collect_edgar(args.ticker, args.limit)
+        elif args.source == "edgar-index":
+            collect_edgar_index()
         elif args.source == "mpt":
             collect_mpt(args.path)
         elif args.source == "fed-text":
@@ -555,8 +698,17 @@ def main() -> None:
         run_compaction(args.instrument)
     elif args.command == "reconcile":
         run_reconcile(args.day, args.hours)
-    elif args.command == "backfill" and args.source == "oanda":
-        backfill_oanda(args.instrument, args.granularity, args.start, args.end)
+    elif args.command == "backfill":
+        if args.source == "yahoo":
+            if not args.ticker:
+                raise SystemExit("backfill yahoo exige --ticker")
+            backfill_yahoo(args.ticker, args.name, args.start, args.end)
+        else:
+            targets = (
+                instruments.ids() if args.instrument == "all" else [args.instrument]
+            )
+            for target in targets:
+                backfill_oanda(target, args.granularity, args.start, args.end)
 
 
 if __name__ == "__main__":

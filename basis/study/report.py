@@ -118,3 +118,104 @@ def render_technical(conn) -> None:
               f"[{fit['low']:6.2f}, {fit['high']:6.2f}]   "
               f"side {100 * fit['side_accuracy']:4.1f}%   "
               f"Brier {fit['brier']:.4f}   {beat}")
+
+
+def render_cross(conn, window: str = "5m") -> None:
+    """
+    The cross-instrument gate, printed in the order the question was asked:
+    which instruments respond to the event at all, then whether the response is
+    predictable from a number knowable while there is still time to act.
+    """
+    from scipy import stats as scipy_stats
+
+    from basis.study import cross
+
+    print("Cross-instrument gate. Does the two year note's repricing over the")
+    print(f"first {window} of an FOMC statement predict what an instrument does")
+    print("over the rest of the two hours.")
+    print()
+
+    print("Membership. Two hour move from 14:00 Eastern, basis points of price,")
+    print("meeting days against ordinary sessions, Mann Whitney one sided.")
+    print()
+    print(
+        f"   {'instrument':<12}{'meetings':>9}{'ordinary':>9}"
+        f"{'meeting':>9}{'ordinary':>9}{'lift':>7}{'p':>10}"
+    )
+    for row in cross.event_day_lift(conn):
+        print(
+            f"   {row['instrument']:<12}{row['meetings']:>9}{row['ordinary']:>9}"
+            f"{row['median_meeting_bps']:>9.2f}{row['median_ordinary_bps']:>9.2f}"
+            f"{row['lift']:>7.2f}{row['p_value']:>10.1e}"
+        )
+
+    frame = cross.panel(conn)
+    if frame.empty:
+        print()
+        print("No panel. Backfill the universe first.")
+        return
+
+    print()
+    print("Transmission. A starred line is one where the HC3 and the bootstrap")
+    print("intervals agree on excluding zero. Responses are in multiples of the")
+    print("instrument's own ordinary two hour move.")
+    print()
+    for tradable in (True, False):
+        label = (
+            f"knowable at +{window}, response measured from +{window} to +2h"
+            if tradable
+            else "whole window against whole move, not knowable in time"
+        )
+        print(f"  {'tradable' if tradable else 'diagnostic'}: {label}")
+        for row in cross.rate_transmission(frame, window):
+            if row["tradable"] is not tradable:
+                continue
+            mark = "*" if row["excludes_zero"] else " "
+            print(
+                f"   {mark}{row['instrument']:<12}n={row['n']:<4}"
+                f"R2={row['r_squared']:5.3f}  {row['estimate']:+7.3f}   "
+                f"HC3 [{row['robust_low']:+7.3f}, {row['robust_high']:+7.3f}]   "
+                f"boot [{row['boot_low']:+7.3f}, {row['boot_high']:+7.3f}]"
+            )
+        print()
+
+    result = cross.pooled(frame, window)
+    if result:
+        mark = "*" if result["excludes_zero"] else " "
+        print(
+            f"  pooled, errors clustered on the meeting: {result['n']} rows over "
+            f"{result['events']} events and {result['instruments']} instruments"
+        )
+        print(
+            f"   {mark}{result['estimate']:+7.3f}   "
+            f"cluster [{result['cluster_low']:+7.3f}, {result['cluster_high']:+7.3f}]"
+            f"   p={result['p_value']:.3f}   R2={result['r_squared']:5.3f}"
+        )
+        print()
+
+    frame = frame.copy()
+    frame["first_bps"] = frame["full_2h_bps"] - frame[f"after_{window}_bps"]
+    print(f"  How much of the two hour move is already spent at +{window}:")
+    for instrument, block in frame.groupby("instrument", sort=False):
+        early = block["first_bps"].abs().median()
+        late = block[f"after_{window}_bps"].abs().median()
+        if not early or not late:
+            continue
+        print(
+            f"   {instrument:<12}{early:7.2f} before, {late:7.2f} after, "
+            f"{100 * early / (early + late):3.0f} percent done"
+        )
+
+    leader = frame[frame["instrument"] == cross.RATE_LEADER]
+    usable = leader[[f"reprice_{window}_bps", f"after_{window}_bps"]].dropna()
+    if len(usable) > 10:
+        test = scipy_stats.spearmanr(usable.iloc[:, 0], usable.iloc[:, 1])
+        print()
+        print(
+            "  Does the rate move lead itself? Spearman between the note's own "
+            f"0 to {window} repricing"
+        )
+        print(
+            f"  and its own {window} to 2h move: rho={float(test.statistic):+.3f}, "
+            f"p={float(test.pvalue):.3f}"
+        )

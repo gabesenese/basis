@@ -8,14 +8,23 @@
   --measured  an observed fact
   --modelled  a number derived under an assumption that is stated beside it
 
-  There is deliberately no red and no green anywhere. Direction is carried by
-  the sign of a numeral and by which side of the baseline a mark sits on. The
-  product's whole claim is that most days the honest answer is no trade, and
-  red-green is the grammar of urgency that argues with that on every screen.
-
   Both pairs pass the lightness band, chroma floor, CVD separation, normal
   vision floor and contrast checks against their own surface. Dark is stepped
   for dark, not flipped from light.
+
+  --up        a price that closed above where it opened
+  --down      a price that closed below where it opened
+
+  Red and green are a scoped exception and not a second palette. They mark
+  price and price alone: a candle body, and the change figure that is read off
+  two closes. Reading a candle chart is a skill both readers already have and
+  it is built on that convention, so refusing it would cost fluency to buy
+  consistency.
+
+  They may not spread. Every probability, interval, score and signal stays on
+  measured and modelled above, because a number saying how confident the engine
+  is must never borrow the colour of a number saying whether the last bar
+  closed up.
 */
 :root {
   --ground: #e9ecef;
@@ -33,6 +42,10 @@
   --rule: #101418;
   --lattice: #1014180a;
   --focus: #1d4e9c;
+  --up: #16714a;
+  --up-wash: #16714a1f;
+  --down: #a8322a;
+  --down-wash: #a8322a1f;
 }
 
 [data-theme="dark"] {
@@ -51,6 +64,10 @@
   --rule: #e4e9ef;
   --lattice: #e4e9ef0a;
   --focus: #5586d2;
+  --up: #3f9c72;
+  --up-wash: #3f9c7229;
+  --down: #cf5b4e;
+  --down-wash: #cf5b4e29;
 }
 
 @theme inline {
@@ -65,6 +82,8 @@
   --color-measured: var(--measured);
   --color-modelled: var(--modelled);
   --color-rule: var(--rule);
+  --color-up: var(--up);
+  --color-down: var(--down);
 
   --font-display: "Newsreader", Georgia, serif;
   --font-sans: "IBM Plex Sans", system-ui, sans-serif;
@@ -130,6 +149,49 @@
     font-family: var(--font-display);
     font-optical-sizing: auto;
   }
+
+  /*
+    The only motion in the product, and it is feedback rather than decoration.
+    A press answers instantly so the interface reads as having heard it, and
+    nothing else moves: a chart someone is reading a price off is a worse chart
+    for animating, and a result list walked with the arrow keys is worse still.
+
+    The curve is a stronger ease-out than the browser's own, which is too weak
+    to register at this duration.
+  */
+  .pressable {
+    transition: transform 160ms cubic-bezier(0.23, 1, 0.32, 1);
+  }
+
+  .pressable:active {
+    transform: scale(0.98);
+  }
+}
+
+/*
+  The theme switch, held to one animation.
+
+  While the attribute is on the root, nothing is allowed its own transition.
+  The colours underneath change in a single frame and the cross-fade above is
+  the only thing moving, which is what stops a nav link easing across in 150ms
+  while the card behind it snaps.
+
+  260ms because this is the whole surface rather than one control. Under 300 as
+  every other interaction here is, but a full page changing in 150 reads as a
+  flash rather than as a change. The curve is the browser's own ease, which is
+  the right shape for a cross-fade: a strong ease-out finishes abruptly, and an
+  abrupt finish is exactly the artefact this exists to remove.
+*/
+[data-theming] *,
+[data-theming] *::before,
+[data-theming] *::after {
+  transition: none !important;
+}
+
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: 260ms;
+  animation-timing-function: ease;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -138,5 +200,10 @@
   *::after {
     animation-duration: 0.01ms !important;
     transition-duration: 0.01ms !important;
+  }
+
+  ::view-transition-old(root),
+  ::view-transition-new(root) {
+    animation: none;
   }
 }

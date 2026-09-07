@@ -30,7 +30,9 @@ def prepared(db_conn):
         "values ('test_price', 'price', 'test', false) on conflict (id) do nothing"
     )
     db_conn.execute(
-        "insert into basis.instrument values ('TEST_PAIR', 'EUR', 'USD', 0.0001) "
+        "insert into basis.instrument "
+        "(id, base_ccy, quote_ccy, pip_size, asset_class, display_name) "
+        "values ('TEST_PAIR', 'EUR', 'USD', 0.0001, 'fx', 'TEST/PAIR') "
         "on conflict (id) do nothing"
     )
     return db_conn

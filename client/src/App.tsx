@@ -2,6 +2,8 @@ import { Navigate, Route, Routes } from "react-router-dom";
 import { useSession } from "./lib/session";
 import { Shell } from "./components/Shell";
 import { SignIn } from "./screens/SignIn";
+import { Search } from "./screens/Search";
+import { Company } from "./screens/Company";
 import { Today } from "./screens/Today";
 import { Calendar } from "./screens/Calendar";
 import { Study } from "./screens/Study";
@@ -19,6 +21,22 @@ export default function App() {
   return (
     <Routes>
       <Route path="/entrar" element={<SignIn />} />
+      <Route
+        path="/buscar"
+        element={
+          <Guarded>
+            <Search />
+          </Guarded>
+        }
+      />
+      <Route
+        path="/empresa/:ticker"
+        element={
+          <Guarded>
+            <Company />
+          </Guarded>
+        }
+      />
       <Route
         path="/hoje"
         element={
@@ -51,7 +69,7 @@ export default function App() {
           </Guarded>
         }
       />
-      <Route path="*" element={<Navigate to="/hoje" replace />} />
+      <Route path="*" element={<Navigate to="/buscar" replace />} />
     </Routes>
   );
 }

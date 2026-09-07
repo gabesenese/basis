@@ -193,3 +193,97 @@ export type Positioning = {
     open_interest: number | null;
   }[];
 };
+
+export type LastClose = {
+  close: number;
+  previous_close?: number;
+  change?: number;
+  change_pct?: number;
+  as_of: string;
+};
+
+export type CompanyHit = {
+  ticker: string;
+  cik: string;
+  name: string;
+  last: LastClose | null;
+};
+
+export type Search = {
+  query: string;
+  universe: number;
+  results: CompanyHit[];
+};
+
+export type CollectedCompany = {
+  ticker: string;
+  name: string;
+  sessions: number;
+  oldest: string;
+  newest: string;
+  last: LastClose | null;
+};
+
+export type Bar = {
+  t: string;
+  o: number;
+  h: number;
+  l: number;
+  c: number;
+  v: number | null;
+};
+
+export type Quote = {
+  price: number;
+  previous_close: number | null;
+  currency: string | null;
+  exchange: string | null;
+  as_of: string | null;
+  age_seconds: number | null;
+  market_state: string | null;
+  delayed: boolean;
+  source: string;
+};
+
+export type EarningsRelease = {
+  event_key: string;
+  accepted_at: string;
+  known_since: string;
+  form: string | null;
+  items: string | null;
+  accession: string | null;
+};
+
+/*
+  Two payloads rather than one, because the two move at different speeds. The
+  header carries what has to be current and is fetched upstream to be so. The
+  series carries what the reader changes often and is answered from the store.
+*/
+export type CompanyHead = {
+  ticker: string;
+  cik: string;
+  name: string;
+  as_of: string;
+  last_close: LastClose | null;
+  earnings: EarningsRelease[];
+  collecting: boolean;
+  source: string;
+};
+
+export type CompanyQuote = {
+  ticker: string;
+  as_of: string;
+  quote: Quote | null;
+  last_close: LastClose | null;
+  feed_answered: boolean;
+};
+
+export type CompanyBars = {
+  ticker: string;
+  as_of: string;
+  granularity: string;
+  bars: Bar[];
+  collected: boolean;
+  refreshing: boolean;
+  source: string;
+};

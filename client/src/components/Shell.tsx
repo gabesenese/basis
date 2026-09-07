@@ -6,6 +6,7 @@ import { Segmented } from "./primitives";
 import type { Key } from "../lib/i18n";
 
 const NAV: { to: string; key: Key }[] = [
+  { to: "/buscar", key: "search" },
   { to: "/hoje", key: "today" },
   { to: "/calendario", key: "calendar" },
   { to: "/estudo", key: "study" },

@@ -23,7 +23,7 @@ export function SignIn() {
 
   const t = (key: Parameters<typeof translate>[1]) => translate(language, key);
 
-  if (account) return <Navigate to="/hoje" replace />;
+  if (account) return <Navigate to="/buscar" replace />;
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();

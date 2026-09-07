@@ -1,7 +1,31 @@
 # Basis
 
-A daily day-trading signal for EUR/USD, produced by digesting public
-information. Two users, one instrument, no customers.
+A daily and weekly signal, produced by digesting public information, across a
+set of instruments that respond to the same scheduled events. Two users, no
+customers.
+
+**Widened on 2026-09-02, agreed by both users.** The project ran until now on
+one instrument at one horizon. Both were scoping decisions and both were costing
+sample, which is the constraint that broke the Phase 2 gate. EUR/USD stays the
+reference instrument, and it stops being the only one.
+
+**Turned on 2026-09-06, and it is a change of subject rather than a change of
+scope.** The instrument is no longer a currency pair and the horizon is no
+longer a session. Basis is now a tool for deciding whether to hold a share of an
+individual company over days and weeks, and it opens on a search field rather
+than on a reading.
+
+Everything measured before this stands, and none of it transfers. The FOMC work
+below is a true account of what that event universe supports, and this plan
+already says in two places why it does not carry to a company: the daily trade
+was calibrated on a pair that trades through the night, and a share gaps over
+its own invalidation while the market is shut. What survives the turn is the
+discipline rather than the findings. Every number still traces to a stored
+record, every record still carries the instant it became knowable, and a price
+the feed has not confirmed is still labelled as the last one that was.
+
+The sections below are kept as the record of what was measured and why the
+answer was no. They are no longer a description of the product.
 
 **Direction set on 2026-08-26: the signal is mandatory and daily.** Every
 trading session gets a direction, an entry, an invalidation, a target and an
@@ -82,6 +106,292 @@ Verified by real calls during Phase 0.
 
 Two gaps carry real consequences and are tracked under Open decisions.
 
+## Instruments and horizons
+
+Widened on 2026-09-02, agreed by both users. The reason given at the time was
+sample: the Phase 2 gate did not fail on its thesis, it failed on 26 meetings
+carrying 8 target range changes, and no statistical care repairs eight
+anecdotes. Reading the same announcement against more instruments was argued to
+multiply the sample on the day it was wired.
+
+**That argument is now measured, and it is half wrong.** The measurement is
+below, under the cross-instrument gate, and it changes what the widening is for.
+
+The universe is chosen by one rule: an instrument enters when the events already
+in the calendar explain it. Rates news reaches currencies, metals, equity
+indices and government notes, so those cost a backfill and nothing else. An
+individual company needs quarterly results and a commodity needs inventory
+releases, so neither is a wider instrument list, they are a new event universe,
+and they wait.
+
+Every row was read from the venue rather than typed from memory, through
+`/v3/accounts/{id}/instruments` on 2026-09-02, and `basis.instruments.drift`
+reads the same endpoint again and refuses to agree that a stale constant is
+still true. It reported no disagreement. pip_size is 10 raised to the venue's
+own pipLocation, which OANDA publishes for the index and note CFDs exactly as it
+does for currency pairs, so the word stays the venue's rather than becoming a
+currency one.
+
+| Instrument | Class | pip | Why it is in |
+|---|---|---|---|
+| EUR_USD | fx | 0.0001 | the reference instrument, everything measured before this date |
+| USD_JPY | fx | 0.01 | the most rate-sensitive major, dollar on the other side |
+| GBP_USD | fx | 0.0001 | a second dollar leg with its own domestic calendar |
+| XAU_USD | metal | 0.01 | the non-yielding asset, where a real rate reads directly |
+| SPX500_USD | index | 1 | equity duration, the other side of the same discount rate |
+| USB02Y_USD | bond | 0.01 | the front of the curve, where a policy decision is priced |
+| USB10Y_USD | bond | 0.01 | the long end, where the path rather than the decision is priced |
+| DE10YB_EUR | bond | 0.01 | the euro leg of the differential, absent from every free source |
+
+The backfill added 7,452,498 one minute bid and ask bars from 2023-01-01, which
+took about twenty minutes against the venue's rate limit. Bond CFDs return
+roughly half the bars of a currency pair over the same span, which is trading
+hours rather than a gap.
+
+**Every instrument earns its place, measured rather than assumed.** The
+membership test is whether the instrument moves more in the two hours from 14:00
+Eastern on a meeting day than on an ordinary session read from the same clock,
+in basis points of price, Mann Whitney one sided.
+
+| Instrument | Meetings | Ordinary | Median meeting | Median ordinary | Lift | p |
+|---|---|---|---|---|---|---|
+| USB02Y_USD | 29 | 839 | 12.09 | 1.46 | 8.30 | 6.9e-11 |
+| EUR_USD | 29 | 920 | 31.50 | 4.47 | 7.04 | 5.5e-15 |
+| USD_JPY | 29 | 923 | 31.59 | 4.74 | 6.67 | 4.5e-17 |
+| XAU_USD | 29 | 888 | 65.56 | 11.14 | 5.88 | 1.2e-11 |
+| GBP_USD | 29 | 923 | 28.27 | 4.94 | 5.73 | 3.4e-14 |
+| USB10Y_USD | 29 | 862 | 23.75 | 4.27 | 5.57 | 9.7e-13 |
+| DE10YB_EUR | 28 | 853 | 14.93 | 3.13 | 4.77 | 1.7e-11 |
+| SPX500_USD | 29 | 883 | 36.85 | 15.69 | 2.35 | 3.9e-05 |
+
+All eight pass. The two year note carries the largest lift, which is where
+theory puts a policy decision, and the equity index carries the smallest, which
+is what an instrument with many other drivers looks like. The EUR/USD figure
+here is 7.04 against the 6.8 recorded earlier in this plan, because this reads
+basis points of price where the earlier one read pips and the samples differ by
+a few sessions.
+
+Responses are not comparable in native units. A pip of EUR/USD, a cent of gold
+and a tick of a note are different quantities, so every response is carried
+three ways: in the instrument's own pips, where the cost is paid; in basis
+points of price, which is unit free; and in multiples of that instrument's own
+ordinary two hour move from the same clock, which is what makes a number large
+or small for that instrument.
+
+Two horizons, daily and weekly, on top of the intraday event windows. Horizon is
+cheap for study and expensive for calibration: the event study already computes
+1d and 5d, so the study side costs nothing, while a daily horizon resolves about
+250 forecasts a year and a weekly one resolves 50, and the isotonic calibration
+in Phase 6 needs resolved forecasts.
+
+**What does not generalise is the trade definition.** The 1.0 ATR invalidation,
+the 1.5 ATR target and the 16:00 flat hour were calibrated on a session ATR of
+54.9 pips and a 58 percent resolution rate measured on EUR/USD alone. Every
+(instrument, horizon) pair needs its own version of that measurement, by the
+same method, before it carries a signal. This is mechanical work and it cannot
+be assumed.
+
+### Company sources, verified on 2026-09-02
+
+The universe rule above says an individual company is a new event universe
+rather than a wider instrument list. This is the survey of what that universe
+costs, run as real calls rather than as a reading of documentation.
+
+The reason for running it now is the cross-instrument gate. That gate found the
+binding constraint to be event count, and it found instrument count exhausted as
+a way to raise it. A hundred companies produce four hundred quarterly results a
+year against roughly eight rate decisions, and companies reporting on the same
+date surprise in different directions, so those are the independent observations
+eight instruments reading one announcement could never be.
+
+| Source | Status | What it gives | Cost |
+|---|---|---|---|
+| SEC EDGAR submissions | verified | every filing with an acceptance timestamp to the second | free, no key |
+| SEC EDGAR XBRL facts | verified | financial statement facts, each carrying the date it was filed | free, no key |
+| Yahoo chart, daily | verified | daily OHLCV, deep history, unofficial endpoint | free, no key |
+| Yahoo chart, intraday | verified, limited | 1m for 7 days, 5m for 60 days, 1h for 730 days | free, no key |
+| Alpaca | to wire | US equity bars including intraday history | free tier, key |
+| Analyst consensus per company | unresolved | the expectation an earnings surprise is measured against | quote pending |
+
+**EDGAR carries its own point-in-time discipline, which is the reason to build
+on it.** The submissions endpoint returns `acceptanceDateTime` stamped to the
+second in UTC, which is the instant a filing became public and therefore exactly
+the `available_at` the bitemporal contract asks for, taken from the publisher
+rather than inferred by us. The `items` field carries 8-K item codes, so an
+earnings release is identifiable as item 2.02 rather than by parsing prose.
+
+The XBRL company concept endpoint goes further and returns, for each reported
+fact, both the period it describes and the date it was filed. That is a vintage,
+and it means a balance sheet can be read as it was reported at the time rather
+than as later restated, without building the vintage machinery ourselves. Every
+other financial source in this plan required that work.
+
+One caution on it: companies do not agree on which concept a number lives under.
+Apple's revenue sits under `RevenueFromContractWithCustomerExcludingAssessedTax`
+in recent years and `Revenues` returns only eleven observations, so any concept
+read across companies needs a fallback list rather than one name.
+
+**Equity price is the one real gap, and it is smaller than it looks.** Yahoo
+serves daily bars with deep history, verified at 2,933 sessions from 2015 for
+three large names, but its intraday history is capped: one minute reaches back
+seven days, five minute sixty days, and one hour two years. There is no free
+minute history for a study of past earnings.
+
+That matters less than it would for the rate engine, and for a mechanical
+reason. A quarterly result is published outside market hours, so the first
+tradable response is the gap between one session's close and the next session's
+open, and the documented continuation runs over days. The natural horizon for a
+company is swing, and a swing horizon is served by daily bars. Intraday equity
+data is what a day trade on a company would need, and the daily trade definition
+in this plan was calibrated on a currency pair and does not transfer to a stock
+that gaps overnight through its own invalidation level.
+
+The remaining caution is that the Yahoo chart endpoint is unofficial. It carries
+no service guarantee, can change shape without notice, and is not
+redistributable, which the source table already has a column for. For a tool two
+people run it is acceptable and it is what the schema's `redistributable` flag
+exists to record. It should never become the thing a live signal depends on
+without a licensed source behind it.
+
+An earlier reading of the same endpoint reported 169 daily bars over four
+decades, which was wrong and worth writing down. Asking for `range=max` silently
+returns a coarser series than the interval requested. Explicit `period1` and
+`period2` return what was asked for. A collector built on the range parameter
+would have quietly studied the wrong bars.
+
+### The equity lane, decided on 2026-09-02
+
+Yahoo for daily bars, chosen over Alpaca because both are free and the axis is
+not cost. Yahoo needs no key and serves the granularity the event imposes;
+Alpaca is an official documented API and would be the better source under a live
+signal. The choice is reversible at no cost, because `price_bar` and
+`equity_bar` are both keyed by source, so a second price source sits beside the
+first rather than replacing it.
+
+**Equities do not go in price_bar, and the reason is the spread.** That table
+carries a bid series and an ask series because the venue quotes both, and the
+whole cost discipline here rests on charging a measured spread rather than
+assuming one. A daily bar from a chart feed carries open, high, low, close and
+volume and no quote at all. Writing the close into both sides would state a
+spread of zero, which is not a missing value but a false one, and every backtest
+reading it would price execution as free. `basis.equity_bar` is therefore shaped
+like the fact actually is, and the cost of an equity trade has to be supplied
+explicitly rather than inferred from a bar.
+
+**The series is restated, and that is a change of units rather than a
+revision.** NVIDIA's close a week before its ten for one split comes back as
+115.00 rather than 1150, so the prices are expressed in units set by the most
+recent split. Returns are invariant under that, which is why a study may use
+them, and it is a different thing from a macro revision, where the quantity
+itself changes.
+
+What it costs is the claim that a stored row never changes. `basis.corporate_action`
+records every split and dividend the feed reports, and `yahoo.units_drift` reads
+the newest stored close against the same session in a fresh fetch and refuses
+the ingest when they disagree. A restatement therefore surfaces as a decision to
+rewrite rather than as half a series silently in the wrong units. Verified on
+NVIDIA: 2,934 daily sessions from 2015, and both splits collected, 4:1 in July
+2021 and 10:1 in June 2024.
+
+available_at on a corporate action is set to its effective date, because this
+feed publishes no announcement date. That is deliberately late: the market knows
+about a split weeks before it takes effect, so a study reading this is withheld
+something it would really have had. Late is the safe direction and early is the
+one that manufactures results.
+
+**The earnings event resolves at the daily horizon, measured rather than
+assumed.** All six of NVIDIA's collected releases were accepted between 16:20
+and 16:31 Eastern, which is after the 16:00 close, so the first tradable
+response is the gap to the next session's open. The gaps run from -0.66 to
++6.30 percent. One of the six opened 5.06 percent higher and closed the day 3.15
+percent lower than the prior close, which is the case a gap-only reading and a
+day-trade framing would each get wrong in opposite directions.
+
+This is why the daily trade definition in this plan does not transfer to a
+company. It was calibrated on a currency pair that trades through the night, and
+a stock gaps over its own invalidation level while the market is shut.
+
+`basis backfill yahoo --ticker NVDA --name NVIDIA --start ... --end ...` and
+`basis collect edgar --ticker NVDA` reproduce all of it.
+
+Still unresolved and now the next thing that matters: the expectation. A gap is
+not a surprise until there is a published number it is measured against. The
+free route inside EDGAR is the company's own prior guidance against the actual,
+both filed, both timestamped, both attributable to a named source.
+
+### The cross-instrument gate
+
+Declared before running: does the repricing of the two year note across the
+first minutes of the announcement predict what an instrument does over the rest
+of the two hours? That is the tradable form of the Phase 2 result, and it is the
+question the widening was bought to answer.
+
+The distinction it turns on is the one Phase 2 named. The repricing Phase 2
+measured ran from the eve of the meeting to the close an hour after it, so it
+was not knowable until after the move it explained had already happened. A
+window that opens at the statement and closes five minutes later is knowable at
+14:05, and the response is then measured from 14:05 to 16:00, so the predictor
+and the response never share a second of price.
+
+**The transmission replicates, on all eight instruments, and it is
+contemporaneous.** Regressing the whole two hour move on the whole window
+repricing gives R2 between 0.29 and 0.58, and both the HC3 and the 20,000 draw
+bootstrap intervals exclude zero on seven of the eight. Every sign is the one
+theory asks for: a note price rising is a yield falling, and it lifts EUR/USD
+(+0.331 sigma per basis point), lifts gold (+0.224), lifts the Bund (+0.221) and
+the ten year (+0.314), and sells USD/JPY (-0.284). The equity index is the
+single exception, R2 0.09, interval covering zero, which is consistent with its
+low lift above.
+
+**The tradable form finds nothing, on every instrument, at both windows.** With
+the predictor closed at 5 minutes and the response opened there, R2 falls to
+between 0.001 and 0.072 and every interval covers zero. Pooled across the seven
+instruments other than the predictor's own, with standard errors clustered on
+the meeting: +0.037 sigma per basis point, 95 percent interval [-0.039, +0.114],
+p 0.34. At a 15 minute window it is +0.052, [-0.018, +0.122], p 0.15.
+
+The reason is not that the move is over. Only 28 to 40 percent of the two hour
+move has happened by 14:05, so most of it is still ahead when the predictor
+becomes readable. The reason is that the first five minutes of the rate move
+does not lead anything, including itself: the rank correlation between the note's
+own 0 to 5 minute repricing and its own 5 minute to 2 hour move is 0.144, p 0.46.
+Rates and everything else reprice together across the two hours rather than
+rates leading and the rest following.
+
+The cross-sectional version fails too. Regressing each instrument's 5 minute to
+2 hour move on its own first five minute jump, with instrument fixed effects and
+errors clustered on the meeting, gives +0.232, interval [-0.268, +0.731], p 0.36.
+Point estimates are positive on all eight, between +0.04 and +0.68, and not one
+of them is separable from noise.
+
+**The structural finding is about sample, and it corrects the argument the
+widening was agreed on.** Eight instruments read against one announcement are
+not eight observations. For any predictor that varies at the event level, which
+the rate repricing does, clustering returns the effective sample to the number
+of events, which is 29. The widening multiplied rows and did not multiply
+events, and the clustered intervals above are what that looks like when it is
+written down honestly. Broadening instruments buys cross-sectional questions,
+and it does not buy statistical power for event-level ones.
+
+So the tradable tests here are underpowered rather than decisive, and the
+distinction matters. The pooled interval still admits effects up to +0.114 sigma
+per basis point, and a typical announcement reprices the note by 4.95 basis
+points, so an effect worth roughly half an ordinary session's move is not
+excluded. What is excluded is the claim that this is measurable now.
+
+**Two consequences for the open decisions.** The intraday rate feed under open
+decision 2 was carried in this plan as the highest value purchase in the
+project, on the argument that it would turn the Phase 2 diagnostic into a
+signal. The venue already serves it free, back to 2023 on one minute bid and ask
+bars, so the purchase was never needed to answer the question. The answer, on
+that free data, is that it does not become a signal at this horizon. The
+purchase is not justified by evidence and comes off the critical path.
+
+And open decision 5, consensus for data releases, is now the only remaining way
+to raise the event count, which this section has just shown is the binding
+constraint. It was already promoted from a widening to a requirement by the
+Phase 2 answer. It is now the critical path.
+
 ## The daily trade
 
 Fixed so that a signal, a backtest and a scorecard all describe the same thing.
@@ -154,6 +464,104 @@ rate announcement explains 37 percent of the two hour move, with the sign theory
 asks for and robust to dropping any meeting. Technical features stay in the
 engine as regime and as level geometry, which is what they are good for. The
 direction has to come from the information layer.
+
+## Swing on a company
+
+The screen opens on a question, which company are you looking at, and a field.
+Search reads the SEC's own ticker index, 10,415 names collected into
+`basis.company` by `basis collect edgar-index`, and it answers from Postgres
+rather than from the network so it moves on a keystroke. An exact symbol
+outranks a name match, because someone typing NVDA means the company that
+trades as NVDA and not the twenty whose printed name contains those letters,
+and inside a rank the shortest name wins, which is what puts Apple Inc. above
+Apple iSports Group.
+
+Opening a company collects it. The daily series comes from Yahoo, ten years of
+it, and the filing history from EDGAR, and both land in the tables the equity
+lane already defined. A company already collected answers from the store in
+tens of milliseconds; a company nobody here has opened blocks once, because
+there is nothing to answer with until it does. Removing one deletes its bars,
+its corporate actions, its filings and its instrument row, and leaves its line
+in the SEC index, so forgetting a company is cheap and reversible.
+
+**The delete refuses anything that is not an equity, and that guard is the
+reason it can exist at all.** The same tables hold the reference instruments,
+and EUR_USD alone carries every measurement in this document. A mistyped ticker
+must not be able to delete a week of collection.
+
+### What the screen is allowed to claim
+
+There is no real time US equity feed in this project. The quote comes from a
+chart endpoint that is delayed and unofficial, and it publishes the instant the
+price was taken, so that instant is rendered beside the number and its age with
+it. Until the feed answers, the header shows the last stored close labelled as a
+stored close rather than as a price. When the feed refuses, the series stays on
+screen and the screen says the feed did not answer.
+
+The change figure is measured against a session close and never against the
+previous bar, whatever window is on screen. Two ways of getting that wrong were
+found and fixed. The feed's own previous close is the close before the whole
+requested window, so on a ten year pull it compares today against a price from
+2016. And the bar before the last one is the previous minute when the reader is
+on a minute chart, which turns a day up two percent into a day up one cent.
+
+Bars whose low is not the lowest of their own four prices are dropped at the
+loader rather than stored. Measured on Apple iSports Group, one bar in 2,516
+returns an open of 0.50 against a low of 3.50, on twenty shares traded. Carrying
+it would mean either storing a bar that contradicts itself, which the table's
+own constraint refuses, or relaxing that constraint, which would let every later
+reader treat a high below an open as a real price.
+
+### The chart, and why it is TradingView's
+
+Lightweight Charts, Apache 2.0, fed from `basis.equity_bar`. It was taken for
+dragging back through history, zooming, and a crosshair that reads the series
+rather than the pixel, which at a swing horizon are the interaction rather than
+polish. The attribution the licence asks for is rendered by the chart itself.
+
+The embeddable widget was considered and refused. It is an iframe carrying
+TradingView's own prices, which cannot be read, cannot be stored, cannot take
+the earnings marks, and would sit above a header showing a different number with
+no way to say which one the screen was claiming. A better chart is worth less
+than the ability to say where a number came from.
+
+Earnings are marked at the SEC's acceptance instant, placed on the first bar at
+or after it, which is the session the release has yet to move rather than the
+one that already closed. A release older than the window is not marked at all.
+
+### Colour, and the second exception
+
+The epistemic palette stands: one hue for an observed fact, one for a number
+derived under a stated assumption. Red and green are a scoped exception and they
+mark price and price alone, which now means the candle body and the change
+figure read off two closes. They may not spread. Every probability, interval,
+score and signal stays on measured and modelled, because a number saying how
+confident the engine is must never borrow the colour of a number saying whether
+the last bar closed up.
+
+### What the interface owes the reader
+
+Three rules, each of which was a defect first.
+
+A reading answers from the store and refreshes behind the response. The quote is
+the only thing that must go upstream to be true, so it is the only thing that
+waits on the network, and it does so on its own endpoint. The header, the series
+and the filings are served from Postgres and refreshed after the answer has been
+sent. Freshness is measured as when this process last asked rather than as how
+old the newest bar is, because a market that closed on Friday leaves every
+series looking permanently stale.
+
+The page is built once and filled in, never swapped from a placeholder into a
+layout. Every slot is reserved at its final size before the thing that fills it
+arrives, measured at a cumulative layout shift of 0.0002 against a good
+threshold of 0.1.
+
+Changing theme is one animation rather than forty. The whole surface cross-fades
+as a single snapshot and every element level transition is suppressed
+underneath it. That also fixes the order of the switch: the attribute has to
+change before React flushes, because anything painting itself from the
+stylesheet reads the custom properties during its layout effect, and flushing
+first paints it in the theme being left.
 
 ## Phases
 
@@ -399,12 +807,52 @@ Study and Context. The signal screens are not built and are not stubbed, because
 `basis.signal` is empty and filling it with an example would put a number on a
 screen that traces to nothing.
 
+The price on Today is live. The recorder publishes each tick to `var/quote.json`
+as it arrives, overwritten in place, and the read surface serves whichever of
+that file and the newest flushed parquet tick carries the later instant, so a
+restart that empties the quote falls back rather than blanks. Before it, the
+screen showed the newest flushed tick and nothing faster existed: measured at
+117 seconds old while the tick heartbeat on the same page read one second.
+
+That file is a display surface and nothing else. It keeps no history, carries no
+available_at and enters no study, because a file that keeps no history cannot
+answer what was knowable at a past instant. Quotes arriving inside a 50
+millisecond floor are dropped rather than queued, since a superseded quote held
+back for later would be published as current after it stopped being so, and a
+write the operating system refuses while a reader holds the file costs that one
+quote rather than the recorder.
+
+The screen refreshes every 20 seconds, pauses while the tab is hidden and reads
+once on the way back. A refresh that fails does not become the screen's error:
+the last good reading stays on screen and the status line says the refresh
+failed and when the reading stopped moving. Replacing a working reading with a
+failure card would throw away the last thing we knew, which is the opposite of
+what someone watching a price wants. `client/qa/refresh.mjs` drives all of it in
+a real browser, including the failure and the recovery.
+
+Measured while wiring this: the machine's clock runs 0.85 seconds behind NTP,
+matching the 0.77 seconds by which the venue's tick stamps lead our own. Every
+spread and response measurement in this plan is stamped by the venue or the
+publisher on both sides, so the offset does not reach them. What it does reach
+is available_at on anything stamped here, which is written 0.85 seconds early
+against real time.
+
 The interface has one rule that shapes everything else. Colour encodes epistemic
 status and nothing else: one hue for an observed fact, one for a number derived
 under a stated assumption, graphite for everything else. There is no red and no
 green anywhere in it. Direction is carried by the sign of a numeral and by which
 side of the zero rule a mark falls on, because red and green are the grammar of
 urgency and this engine's whole claim is that most days the answer is no trade.
+
+**Scoped exception, decided on 2026-09-02: the price chart uses red and green
+candles.** Reading a candle chart technically is a skill both users already
+have, and it is built on that convention, so refusing it would cost fluency to
+buy consistency. The exception is the candle body and wick on the price chart
+and nothing else. Every signal surface, every probability, every interval and
+every scorecard keeps the epistemic palette, because the original reason holds
+there: red and green are the grammar of urgency, and most days the answer is no
+trade. A number that says how confident the engine is must never borrow the
+colour of a number that says whether the last bar closed up.
 
 Every uncertain quantity renders through one mark, the interval rail: the
 estimate as a hard tick, the confidence interval as a band, the bootstrap as a
@@ -442,6 +890,16 @@ intraday rate feed turns the strongest result in the study from a diagnostic
 into a signal. On the evidence this is now the highest value purchase in the
 project, and it should be scoped on the US curve first, where the study ran,
 rather than on the euro leg.
+
+**Closed on 2026-09-02, and not by buying it.** The venue already serves the US
+curve intraday, as one minute bid and ask bars on two, five, ten and thirty year
+note CFDs back to 2023, and the Bund with them, which also answers the euro leg
+this entry called impossible on free data. The question was therefore answerable
+without the purchase. Measured under the cross-instrument gate above, the answer
+is that the repricing does not become a signal at this horizon: it moves
+contemporaneously with everything else rather than leading it. The purchase
+comes off the critical path, and what took it off is evidence rather than
+budget.
 
 **3. OANDA has no historical ticks.** Decided: record the stream now and model
 the gap meanwhile, with the modelled number labelled as such.
@@ -518,3 +976,27 @@ and flash PMI carry a published consensus and a published actual, so the
 surprise is a real number against a real expectation at the instant of release,
 which is exactly the object the FOMC target range could not provide. It also
 takes the event count from roughly eight a year to roughly fifty.
+
+**Promoted again on 2026-09-02, to the critical path.** The cross-instrument
+gate showed that reading one announcement against eight instruments multiplies
+rows and not events, so every event-level test stays pinned to an effective
+sample of 29 however wide the universe gets. Instrument count is exhausted as a
+source of statistical power. Event count is the only one left.
+
+**6. Real time equity price, stream free or buy.** The quote on the company
+screen is delayed and says so. Making it live is a feed decision rather than a
+code one, and the recorder that already streams EUR/USD is the shape it would
+land in.
+
+No free source carries the consolidated tape. Free real time means one venue's
+prints: Finnhub serves real time US trades over a WebSocket on its free tier,
+and Alpaca's free tier is IEX with the REST side delayed fifteen minutes and the
+socket capped at thirty symbols. All US exchanges, unlimited symbols and no
+delay is 99 dollars a month at Alpaca. On a liquid name a single venue tracks
+the consolidated price closely; on a thin one the last print can be minutes old
+and disagree with a broker, which is exactly the kind of gap this project
+refuses to hide.
+
+Blocked on a key rather than on a decision. Recommended is Finnhub for the first
+pass, because it costs nothing and proves the plumbing, with the paid tape
+reconsidered once there is a signal worth paying to execute.

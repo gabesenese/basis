@@ -7,6 +7,8 @@ const PASSWORD = process.env.BASIS_QA_PASSWORD;
 const SHOTS = process.env.BASIS_QA_SHOTS ?? "qa/shots";
 
 const SCREENS = [
+  { path: "/buscar", name: "buscar", expect: ["NVDA"] },
+  { path: "/empresa/NVDA", name: "empresa", expect: ["NVIDIA", "CIK"] },
   { path: "/hoje", name: "hoje", expect: ["EUR/USD"] },
   { path: "/calendario", name: "calendario", expect: ["FOMC"] },
   { path: "/estudo", name: "estudo", expect: ["R²"] },
@@ -67,7 +69,7 @@ await shoot("02-entrar-erro");
 await page.fill('input[type="email"]', EMAIL);
 await page.fill('input[type="password"]', PASSWORD);
 await page.click('button[type="submit"]');
-await page.waitForURL("**/hoje", { timeout: 10000 });
+await page.waitForURL("**/buscar", { timeout: 10000 });
 
 for (const theme of ["light", "dark"]) {
   await setTheme(theme);

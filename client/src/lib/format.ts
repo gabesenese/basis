@@ -154,3 +154,60 @@ const HORIZON_LABELS: Record<string, string> = {
 export function horizonLabel(key: string): string {
   return HORIZON_LABELS[key] ?? key;
 }
+
+/*
+  A share price is quoted in cents and a currency pair in pips, so the five
+  decimals `price` fixes are wrong for a company. Two is right for almost every
+  listed name, and the sub-dollar ones need more, so the count follows the
+  magnitude rather than being fixed.
+*/
+export function money(language: Language, value: number | null | undefined): string {
+  if (value === null || value === undefined || Number.isNaN(value)) return "—";
+  const digits = Math.abs(value) >= 1 ? 2 : 4;
+  return value.toLocaleString(LOCALE[language], {
+    minimumFractionDigits: digits,
+    maximumFractionDigits: digits,
+  });
+}
+
+export function percent(language: Language, value: number | null | undefined): string {
+  if (value === null || value === undefined || Number.isNaN(value)) return "—";
+  return `${signed(language, value, 2)}%`;
+}
+
+/*
+  A daily bar is stamped at the session's opening instant, so rendering it in
+  the reader's own zone can move it onto the day before. The date on a daily
+  candle is therefore read in the exchange's zone, and only an intraday bar,
+  which is a moment rather than a day, is shown in the reader's own.
+*/
+const EXCHANGE_ZONE = "America/New_York";
+
+export function barStamp(
+  language: Language,
+  timezone: string,
+  iso: string,
+  granularity: string,
+  form: "axis" | "full",
+): string {
+  const daily = granularity === "D";
+  const zone = daily ? EXCHANGE_ZONE : timezone;
+  const date = new Date(iso);
+
+  if (daily) {
+    return new Intl.DateTimeFormat(LOCALE[language], {
+      timeZone: zone,
+      day: "2-digit",
+      month: "2-digit",
+      ...(form === "full" ? { year: "numeric" } : {}),
+    }).format(date);
+  }
+
+  return new Intl.DateTimeFormat(LOCALE[language], {
+    timeZone: zone,
+    ...(form === "full" ? { day: "2-digit", month: "2-digit" } : {}),
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(date);
+}

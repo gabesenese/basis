@@ -7,6 +7,7 @@ from basis import accounts
 from basis.api.deps import SESSION_KEY, Cached, connection, current_account
 from basis.config import settings
 from basis.lanes import health as health_lane
+from basis.lanes import quote as quote_lane
 from basis.lanes import spread_model
 from basis.lanes import ticks as tick_lane
 from basis.sources import oanda_stream
@@ -79,10 +80,34 @@ def update_preferences(
     return _account_payload(updated)
 
 
+def _utc(moment: datetime) -> datetime:
+    return moment if moment.tzinfo else moment.replace(tzinfo=timezone.utc)
+
+
+def _stream_reading() -> dict | None:
+    """
+    The recorder overwrites the live quote as each tick arrives, while parquet
+    only receives them at the two minute flush, so the quote is normally the
+    later of the two and the flushed tick is what remains after a restart
+    empties it. Taking whichever instant is later needs no rule about which
+    file is trustworthy, and a stopped recorder freezes both, which is the
+    health card's question rather than this one's.
+    """
+    readings = [
+        quote_lane.read_quote(settings.recorder_quote_path),
+        tick_lane.latest_tick(
+            settings.basis_parquet_root, oanda_stream.SOURCE_ID, INSTRUMENT
+        ),
+    ]
+    arrived = [reading for reading in readings if reading is not None]
+    if not arrived:
+        return None
+
+    return max(arrived, key=lambda reading: _utc(reading["ts"]))
+
+
 def _spot(conn) -> dict | None:
-    tick = tick_lane.latest_tick(
-        settings.basis_parquet_root, oanda_stream.SOURCE_ID, INSTRUMENT
-    )
+    tick = _stream_reading()
     if tick is not None:
         return {
             "bid": tick["bid"],
@@ -215,9 +240,16 @@ def _instrument(conn) -> dict:
 
 @router.get("/today")
 def today(account=Depends(current_account), conn=Depends(connection)):
+    """
+    Spot is read before the clock is stamped. The live quote is overwritten
+    while the rest of this answer is assembled, so stamping first would let a
+    page dated 11:28:04 carry a price timestamped 11:28:05, which reads as a
+    broken clock rather than as the few hundred milliseconds of honest work it
+    actually is.
+    """
+    spot = _spot(conn)
     moment = datetime.now(timezone.utc)
     report = health_lane.inspect(conn, settings.recorder_heartbeat_path, moment)
-    spot = _spot(conn)
 
     quiet_baseline = conn.execute(
         """
