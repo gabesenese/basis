@@ -159,7 +159,12 @@ def collect_edgar(ticker: str, limit: int) -> None:
             return
 
         payload = edgar.submissions(client, found[ticker])
-        releases = edgar.earnings_releases(edgar.filings(payload))[:limit]
+        history = edgar.all_filings(client, payload)
+        releases = sorted(
+            edgar.earnings_releases(history),
+            key=lambda row: row["accepted_at"],
+            reverse=True,
+        )[:limit]
         print(f"edgar {ticker}: {payload['name']}, {len(releases)} releases")
 
         events = edgar.ingest_events(conn, releases)
@@ -178,6 +183,117 @@ def collect_edgar(ticker: str, limit: int) -> None:
             time.sleep(0.15)
 
     print(f"edgar {ticker}: {events} eventos novos, {documents} documentos novos")
+
+
+def collect_edgar_facts(ticker: str) -> None:
+    """
+    What the company reported, as numbers rather than as prose.
+
+    The release text already collected says the quarter out loud and cannot be
+    computed with. XBRL says the same quarter in a form that can, and stamps
+    every fact with the filing that stated it, which is what lets an
+    expectation be built from only the filings that existed at the time.
+
+    One request per measure, which the SEC's rate limit swallows easily for one
+    company and would not for the whole index, so this is deliberately per
+    ticker rather than a sweep.
+    """
+    import time
+
+    ticker = ticker.upper()
+
+    with db.connect() as conn, edgar.open_client() as client:
+        found = conn.execute(
+            "select ticker, cik, name from basis.company where ticker = %s",
+            (ticker,),
+        ).fetchone()
+
+        if found is None:
+            print(f"edgar: {ticker} nao esta no indice, rode collect edgar-index")
+            return
+
+        db.upsert_source(
+            conn,
+            edgar.SOURCE_ID,
+            "text",
+            "SEC EDGAR",
+            True,
+            "filings with acceptance timestamps, item 2.02 marks a results release",
+        )
+        conn.commit()
+
+        payload = edgar.submissions(client, found["cik"])
+        history = edgar.all_filings(client, payload)
+        acceptance = {row["accession"]: row["accepted_at"] for row in history}
+
+        """
+        The releases are written here as well as the facts, because a number
+        without the instant it was published at cannot be studied and an
+        instant without a number cannot be measured against anything. One
+        command leaves a company ready for both.
+        """
+        releases = edgar.earnings_releases(history)
+        events = edgar.ingest_events(conn, releases)
+        conn.commit()
+
+        print(
+            f"edgar {ticker}: {found['name']}, {len(history)} filings, "
+            f"{len(releases)} releases, {events} eventos novos"
+        )
+
+        total = 0
+        for measure in edgar.CONCEPTS:
+            rows = edgar.reported(client, found["cik"], [measure])
+            written = edgar.ingest_facts(conn, found["cik"], rows, acceptance)
+            conn.commit()
+            total += written
+
+            concept = rows[0]["concept"] if rows else "nenhum conceito responde"
+            print(f"  {measure:<20} {len(rows):>5} fatos  {written:>5} novos  {concept}")
+            time.sleep(0.15)
+
+    print(f"edgar {ticker}: {total} fatos novos")
+
+
+def build_expectations(ticker: str | None, quiet: bool = False) -> None:
+    """
+    One expectation per earnings release, for every release whose company has
+    enough filed history behind it to form one. Without a ticker it runs over
+    every company collected, which is what the study reads.
+    """
+    from basis.lanes import expectation as lane
+    from basis.study import earnings
+
+    ticker = ticker.upper() if ticker else None
+
+    with db.connect() as conn:
+        db.upsert_source(
+            conn,
+            lane.SOURCE_ID,
+            "expectation",
+            "Basis",
+            False,
+            "same quarter a year ago carried forward by the drift of the four since",
+        )
+        conn.commit()
+
+        built = earnings.build(conn, ticker)
+        conn.commit()
+
+    if not quiet:
+        for row in built["rows"]:
+            print(
+                f"  {row['ticker']:<6} {row['accepted_at']:%Y-%m-%d}  {row['period_end']}  "
+                f"{row['measure']:<12} esperado {row['expected']:>16,.2f}  "
+                f"realizado {row['actual']:>16,.2f}  z {row['surprise']:>6.2f}  "
+                f"{row['rule']}"
+            )
+
+    print(
+        f"{ticker or 'todas'}: {built['written']} expectativas novas, "
+        f"{len(built['rows'])} eventos com surpresa, "
+        f"{built['skipped']} sem historico suficiente"
+    )
 
 
 def backfill_oanda(instrument: str, granularity: str, start: date, end: date) -> None:
@@ -574,8 +690,44 @@ def run_study(subject: str) -> None:
             report.render(conn)
         elif subject == "cross":
             report.render_cross(conn)
+        elif subject == "earnings":
+            report.render_earnings(conn)
         else:
             report.render_technical(conn)
+
+
+def serve_once(host: str, port: int) -> None:
+    import uvicorn
+
+    uvicorn.run("basis.api.app:app", host=host, port=port)
+
+
+def watch_and_serve(host: str, port: int) -> None:
+    """
+    Reload by replacing the whole process rather than by uvicorn's own watcher.
+
+    Measured on 2026-09-13, on this machine, uvicorn 0.52.4 detects the change
+    and announces it and then never replaces its worker. The old one keeps the
+    connection and keeps answering, so the server returns 200 with the code from
+    before the edit and nothing in the log says so. It reproduces on a six line
+    ASGI app, so it is not something about this one, and both StatReload and
+    WatchFiles do it.
+
+    That failure is the worst shape a failure can take here: it does not crash,
+    it disagrees with the file on disk while looking healthy. A whole process
+    restart has no worker to fail to replace, so the class of bug is gone rather
+    than worked around.
+    """
+    from pathlib import Path
+
+    try:
+        from watchfiles import run_process
+    except ImportError:
+        raise SystemExit(
+            "serve --reload precisa de watchfiles: pip install -e \".[dev]\""
+        )
+
+    run_process(Path(__file__).parent, target=serve_once, args=(host, port))
 
 
 def main() -> None:
@@ -585,7 +737,10 @@ def main() -> None:
     collect = sub.add_parser("collect")
     collect.add_argument(
         "source",
-        choices=["cftc", "calendar", "mpt", "fed-text", "edgar", "edgar-index"],
+        choices=[
+            "cftc", "calendar", "mpt", "fed-text", "edgar",
+            "edgar-index", "edgar-facts",
+        ],
     )
     collect.add_argument("--ticker", default=None)
     collect.add_argument("--limit", type=int, default=40)
@@ -593,7 +748,11 @@ def main() -> None:
     collect.add_argument("--path", default=None)
 
     study = sub.add_parser("study")
-    study.add_argument("subject", choices=["fomc", "technical", "cross"])
+    study.add_argument("subject", choices=["fomc", "technical", "cross", "earnings"])
+
+    expect = sub.add_parser("expect")
+    expect.add_argument("--ticker", default=None)
+    expect.add_argument("--quiet", action="store_true")
 
     labels = sub.add_parser("label")
     labels.add_argument("subject", choices=["fomc"])
@@ -663,12 +822,18 @@ def main() -> None:
             collect_edgar(args.ticker, args.limit)
         elif args.source == "edgar-index":
             collect_edgar_index()
+        elif args.source == "edgar-facts":
+            if not args.ticker:
+                raise SystemExit("collect edgar-facts exige --ticker")
+            collect_edgar_facts(args.ticker)
         elif args.source == "mpt":
             collect_mpt(args.path)
         elif args.source == "fed-text":
             collect_fed_text(args.since)
     elif args.command == "study":
         run_study(args.subject)
+    elif args.command == "expect":
+        build_expectations(args.ticker, args.quiet)
     elif args.command == "label" and args.subject == "fomc":
         run_labeller(args.document_type, args.limit, args.dry_run)
     elif args.command == "spread-profile":
@@ -689,11 +854,10 @@ def main() -> None:
             args.password,
         )
     elif args.command == "serve":
-        import uvicorn
-
-        uvicorn.run(
-            "basis.api.app:app", host=args.host, port=args.port, reload=args.reload
-        )
+        if args.reload:
+            watch_and_serve(args.host, args.port)
+        else:
+            serve_once(args.host, args.port)
     elif args.command == "compact":
         run_compaction(args.instrument)
     elif args.command == "reconcile":

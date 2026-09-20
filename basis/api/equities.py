@@ -263,6 +263,17 @@ def _closes(conn, tickers: list[str]) -> dict[str, dict]:
 
 
 def _earnings(conn, ticker: str) -> list[dict]:
+    """
+    The releases, each carrying what the company's own history implied for the
+    quarter it reported.
+
+    Without that, a mark on the chart says only that something was published.
+    The gap beside it is a fact and the reader has no way to tell whether it was
+    news, which is the difference between a price series with decoration on it
+    and a reading.
+    """
+    from basis.study import earnings
+
     rows = conn.execute(
         """
         select distinct on (event_key)
@@ -275,6 +286,17 @@ def _earnings(conn, ticker: str) -> list[dict]:
         (ticker,),
     ).fetchall()
 
+    against: dict[str, dict] = {}
+    for reading in earnings.readings(conn, ticker):
+        against.setdefault(reading["event_key"], {})[reading["measure"]] = {
+            "expected": reading["expected"],
+            "actual": reading["actual"],
+            "surprise": reading["surprise"],
+            "period_end": reading["period_end"],
+            "rule": reading["rule"],
+            "origin": reading["origin"],
+        }
+
     return [
         {
             "event_key": row["event_key"],
@@ -283,6 +305,7 @@ def _earnings(conn, ticker: str) -> list[dict]:
             "form": row["payload"].get("form"),
             "items": row["payload"].get("items"),
             "accession": row["payload"].get("accession"),
+            "against": against.get(row["event_key"]) or None,
         }
         for row in sorted(rows, key=lambda row: row["scheduled_time"])
     ]
@@ -309,14 +332,44 @@ def _collect_filings_later(company: dict) -> None:
 
 
 def _collect_filings(conn, company: dict) -> None:
+    """
+    The releases, the reported numbers and the expectations they are read
+    against, in one pass behind the response.
+
+    They arrive together because separately they are each useless. An instant
+    with no number cannot be measured and a number with no instant cannot be
+    placed, and an expectation formed from filings that are not all in yet is
+    formed from a history with holes in it.
+    """
+    from basis.lanes import expectation as expectation_lane
+    from basis.study import earnings
+
     with edgar.open_client() as client:
         payload = edgar.submissions(client, company["cik"])
+        history = edgar.all_filings(client, payload)
+        facts = edgar.reported(client, company["cik"], earnings.MEASURES)
 
-    releases = edgar.earnings_releases(edgar.filings(payload))
-    if releases:
-        db.upsert_source(conn, edgar.SOURCE_ID, "text", "SEC EDGAR", True)
-        edgar.ingest_events(conn, releases)
-        conn.commit()
+    releases = edgar.earnings_releases(history)
+    if not releases:
+        return
+
+    db.upsert_source(conn, edgar.SOURCE_ID, "text", "SEC EDGAR", True)
+    edgar.ingest_events(conn, releases)
+
+    acceptance = {row["accession"]: row["accepted_at"] for row in history}
+    edgar.ingest_facts(conn, company["cik"], facts, acceptance)
+    conn.commit()
+
+    db.upsert_source(
+        conn,
+        expectation_lane.SOURCE_ID,
+        "expectation",
+        "Basis",
+        False,
+        "same quarter a year ago carried forward by the drift of the four since",
+    )
+    earnings.build(conn, company["ticker"])
+    conn.commit()
 
 
 @router.get("/companies")
@@ -562,6 +615,10 @@ def forget(
         "delete from basis.text_document where event_key like %s",
         (f"EARN:{symbol}:%",),
     ).rowcount
+    expectations = conn.execute(
+        "delete from basis.expectation where event_key like %s",
+        (f"EARN:{symbol}:%",),
+    ).rowcount
     events = conn.execute(
         """
         delete from basis.calendar_event
@@ -569,6 +626,20 @@ def forget(
         """,
         (symbol,),
     ).rowcount
+
+    """
+    The reported facts go with the rest, and they are found through the SEC
+    index rather than through the instrument row, because they are keyed by CIK
+    and a company keeps that when it changes ticker.
+    """
+    facts = conn.execute(
+        """
+        delete from basis.company_fact
+        where cik in (select cik from basis.company where ticker = %s)
+        """,
+        (symbol,),
+    ).rowcount
+
     conn.execute("delete from basis.instrument where id = %s", (symbol,))
     conn.commit()
 
@@ -583,5 +654,7 @@ def forget(
             "actions": actions,
             "documents": documents,
             "earnings": events,
+            "expectations": expectations,
+            "facts": facts,
         },
     }

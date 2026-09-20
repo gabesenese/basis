@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import { useResource, useSession } from "../lib/session";
-import type { CompanyBars, CompanyHead, CompanyQuote } from "../lib/api";
+import type { CompanyBars, CompanyHead, CompanyQuote, Reading } from "../lib/api";
 import {
   Card,
   CardHead,
@@ -13,7 +13,8 @@ import {
 } from "../components/primitives";
 import { Candles } from "../components/candles";
 import { Change } from "../components/change";
-import { age, dateTime, dayOnly, money, number } from "../lib/format";
+import { age, compact, dateTime, dayOnly, money, number, signed } from "../lib/format";
+import type { Language } from "../lib/i18n";
 
 /*
   A window is a granularity and a bar count together, because they are not
@@ -140,12 +141,66 @@ function Quote({ ticker, stored }: { ticker: string; stored: CompanyHead["last_c
   );
 }
 
+/*
+  The reported number over the number the rule implied, stacked rather than
+  spread across two columns. A surprise is the distance between exactly these
+  two, and a reader who has to look four columns away to find the second one is
+  being asked to hold a number in their head to read the row.
+*/
+function Reported({
+  language,
+  reading,
+  compacted = false,
+}: {
+  language: Language;
+  reading: Reading | null;
+  compacted?: boolean;
+}) {
+  if (!reading) {
+    return <td className="num px-5 py-3 text-right align-top text-[12px] text-faint">—</td>;
+  }
+
+  const show = (value: number) =>
+    compacted ? compact(language, value) : number(language, value, 2);
+
+  return (
+    <td className="num px-5 py-3 text-right align-top">
+      <div className="text-[13px] text-ink">{show(reading.actual)}</div>
+      <div className="text-[11px]" style={{ color: "var(--modelled)" }}>
+        {show(reading.expected)}
+      </div>
+    </td>
+  );
+}
+
+/*
+  In standard deviations of how wrong this rule has been on this company, which
+  is the only unit in which a software company's revenue and a bank's earnings
+  per share can sit in the same column. It is never coloured by direction: red
+  and green mark price in this interface and nothing else, and a surprise
+  borrowing them would read as a gain.
+*/
+function Surprise({ language, reading }: { language: Language; reading: Reading | null }) {
+  if (!reading) {
+    return <td className="num px-5 py-3 text-right align-top text-[12px] text-faint">—</td>;
+  }
+
+  return (
+    <td className="num px-5 py-3 text-right align-top text-[13px]">
+      <span style={{ color: "var(--modelled)" }}>
+        {signed(language, reading.surprise, 2)}σ
+      </span>
+    </td>
+  );
+}
+
+
 function Chart({
   ticker,
   marks,
 }: {
   ticker: string;
-  marks: { t: string; label: string }[];
+  marks: { t: string; label: string; note?: string | null }[];
 }) {
   const { language, timezone, t } = useSession();
   const [window_, setWindow] = useState<WindowKey>("6M");
@@ -265,10 +320,22 @@ export function Company() {
     can carry it immediately and the rest can land inside a shape that is
     already the right one.
   */
-  const marks = (head?.earnings ?? []).map((release) => ({
-    t: release.accepted_at,
-    label: t("earningsMark").toUpperCase(),
-  }));
+  /*
+    The note under a mark is the earnings per share surprise and never the
+    revenue one, because only one of the two was measured to carry anything.
+    Over 1,357 releases the earnings surprise moves the opening gap by 0.273
+    percent per standard deviation and the revenue surprise moves it by 0.008,
+    with an interval that straddles zero at every horizon. Printing both would
+    give equal weight to a number that was tested and failed.
+  */
+  const marks = (head?.earnings ?? []).map((release) => {
+    const reading = release.against?.eps_diluted ?? null;
+    return {
+      t: release.accepted_at,
+      label: t("earningsMark").toUpperCase(),
+      note: reading ? signed(language, reading.surprise, 1) + "σ" : null,
+    };
+  });
 
   return (
     <div className="space-y-6">
@@ -303,7 +370,12 @@ export function Company() {
         <CardHead
           title={t("earningsReleases")}
           lead={t("earningsLead")}
-          aside={<Provenance kind="measured">{t("measured")}</Provenance>}
+          aside={
+            <div className="flex items-center gap-2">
+              <Provenance kind="measured">{t("measured")}</Provenance>
+              <Provenance kind="modelled">{t("modelled")}</Provenance>
+            </div>
+          }
         />
 
         {(head?.earnings ?? []).length === 0 ? (
@@ -314,12 +386,19 @@ export function Company() {
           )
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[36rem] text-left">
+            <table className="w-full min-w-[46rem] text-left">
               <thead>
                 <tr className="border-b border-line">
-                  {[t("acceptedAt"), t("form"), t("items")].map((heading, index) => (
+                  {[
+                    t("acceptedAt"),
+                    t("quarter"),
+                    t("revenue"),
+                    t("surprise"),
+                    t("earningsPerShare"),
+                    t("surprise"),
+                  ].map((heading, index) => (
                     <th
-                      key={heading}
+                      key={`${heading}-${index}`}
                       className={`eyebrow px-5 py-2.5 font-medium ${index > 0 ? "text-right" : ""}`}
                     >
                       {heading}
@@ -328,19 +407,26 @@ export function Company() {
                 </tr>
               </thead>
               <tbody>
-                {[...(head?.earnings ?? [])].reverse().map((release) => (
-                  <tr key={release.event_key} className="border-b border-line last:border-b-0">
-                    <td className="num px-5 py-3 text-[13px] text-ink">
-                      {dateTime(language, timezone, release.accepted_at)}
-                    </td>
-                    <td className="num px-5 py-3 text-right text-[12px] text-muted">
-                      {release.form}
-                    </td>
-                    <td className="num px-5 py-3 text-right text-[12px] text-muted">
-                      {release.items}
-                    </td>
-                  </tr>
-                ))}
+                {[...(head?.earnings ?? [])].reverse().map((release) => {
+                  const revenue = release.against?.revenue ?? null;
+                  const share = release.against?.eps_diluted ?? null;
+                  const quarter = revenue?.period_end ?? share?.period_end ?? null;
+
+                  return (
+                    <tr key={release.event_key} className="border-b border-line last:border-b-0">
+                      <td className="num px-5 py-3 align-top text-[13px] text-ink">
+                        {dateTime(language, timezone, release.accepted_at)}
+                      </td>
+                      <td className="num px-5 py-3 text-right align-top text-[12px] text-muted">
+                        {quarter ? dayOnly(language, timezone, quarter) : "—"}
+                      </td>
+                      <Reported language={language} reading={revenue} compacted />
+                      <Surprise language={language} reading={revenue} />
+                      <Reported language={language} reading={share} />
+                      <Surprise language={language} reading={share} />
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>

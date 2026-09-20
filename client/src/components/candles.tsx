@@ -7,6 +7,7 @@ import {
   type IChartApi,
   type ISeriesApi,
   type ISeriesMarkersPluginApi,
+  type SeriesMarker,
   type Time,
   type UTCTimestamp,
 } from "lightweight-charts";
@@ -106,6 +107,7 @@ function palette() {
     lineStrong: read("--line-strong"),
     surface: read("--surface"),
     measured: read("--measured"),
+    modelled: read("--modelled"),
   };
 }
 
@@ -116,7 +118,7 @@ export function Candles({
   height = 380,
 }: {
   bars: Bar[];
-  marks?: { t: string; label: string }[];
+  marks?: { t: string; label: string; note?: string | null }[];
   granularity: string;
   height?: number;
 }) {
@@ -230,22 +232,45 @@ export function Candles({
       the left edge, which reads as four results on one session rather than as
       four results the window does not reach.
     */
+    /*
+      Two marks on one session rather than one carrying both claims. The
+      acceptance instant is published and the surprise beside it is a number
+      derived under a stated rule, and this palette says which is which with
+      colour. A single marker would have to pick one of the two colours and
+      would then be telling the reader something false about half of itself.
+    */
     const times = bars.map((bar) => bar.t);
+    const tone = palette();
+
     pins.current?.setMarkers(
       marks
-        .map((mark) => {
+        .flatMap((mark) => {
           const index = mark.t < times[0] ? -1 : times.findIndex((time) => time >= mark.t);
-          return index < 0
-            ? null
-            : {
-                time: stamp(times[index], daily, timezone),
-                position: "aboveBar" as const,
-                shape: "arrowDown" as const,
-                color: palette().measured,
-                text: mark.label,
-              };
-        })
-        .filter((mark) => mark !== null),
+          if (index < 0) return [];
+
+          const time = stamp(times[index], daily, timezone);
+          const placed: SeriesMarker<Time>[] = [
+            {
+              time,
+              position: "aboveBar",
+              shape: "arrowDown",
+              color: tone.measured,
+              text: mark.label,
+            },
+          ];
+
+          if (mark.note) {
+            placed.push({
+              time,
+              position: "belowBar",
+              shape: "circle",
+              color: tone.modelled,
+              text: mark.note,
+            });
+          }
+
+          return placed;
+        }),
     );
 
     chart.current?.timeScale().fitContent();

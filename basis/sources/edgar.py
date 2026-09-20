@@ -1,7 +1,8 @@
 import hashlib
 import html
 import re
-from datetime import datetime
+from datetime import date, datetime, time, timedelta
+from zoneinfo import ZoneInfo
 
 import httpx
 from psycopg.types.json import Jsonb
@@ -41,9 +42,16 @@ PERIODIC_FORMS = ("10-K", "10-Q")
 """
 Companies do not agree on which XBRL concept a number lives under, and the
 disagreement is not cosmetic: reading Apple's revenue under `Revenues` returns
-eleven observations and misses every recent year. Each measure is therefore a
-list tried in order, and the concept that answered is recorded beside the value
-so a later reader can see which definition produced it.
+eleven observations and misses every recent year, while reading NVIDIA's under
+`RevenueFromContractWithCustomerExcludingAssessedTax` returns a five year stub
+that stops in 2022 and hides the decade around it.
+
+So a measure is a list of candidates and the one that answers for the longest
+is the one taken, rather than the first that answers at all. Order alone would
+have handed NVIDIA the stub, since it does answer, and a series that ends in
+2022 is worse than no series because it looks like one. The concept that won is
+recorded beside every value it produced, so a later reader can see which
+definition is being read and can tell two companies apart.
 """
 CONCEPTS = {
     "revenue": [
@@ -129,6 +137,39 @@ def filings(payload: dict) -> list[dict]:
             }
         )
     return rows
+
+
+def all_filings(client: httpx.Client, payload: dict) -> list[dict]:
+    """
+    The whole filing history rather than the last thousand rows of it.
+
+    `recent` holds a thousand filings and nothing says how far back that
+    reaches, because it depends on how much a company files. Apple's thousand
+    go back to 2015 and NVIDIA's stop in 2020, since NVIDIA's insiders file
+    more often than Apple's, and a study that took what recent offered would
+    have given one company eleven years of results and the other five for a
+    reason that has nothing to do with either company.
+
+    The older pages are published beside it and are read in full here, which is
+    a handful of extra requests once per company.
+    """
+    rows = filings(payload)
+
+    for page in payload["filings"].get("files") or []:
+        response = client.get(f"{BASE}/submissions/{page['name']}")
+        response.raise_for_status()
+        rows.extend(
+            filings(
+                {
+                    "cik": payload["cik"],
+                    "name": payload.get("name"),
+                    "tickers": payload.get("tickers"),
+                    "filings": {"recent": response.json()},
+                }
+            )
+        )
+
+    return sorted(rows, key=lambda row: row["accepted_at"])
 
 
 def earnings_releases(rows: list[dict]) -> list[dict]:
@@ -228,21 +269,48 @@ def fetch_document(client: httpx.Client, row: dict, filename: str | None = None)
     return BLANK.sub("\n\n", body).strip()
 
 
-def concept(client: httpx.Client, cik: str, names: list[str]) -> tuple[str, list] | None:
+def concept(client: httpx.Client, cik: str, name: str) -> dict | None:
     """
-    Tries each concept in order and returns the first that answers, with the
-    name that answered. A 404 here is an ordinary result rather than a failure:
-    it means this company does not report under that tag.
+    One concept for one company. A 404 here is an ordinary result rather than a
+    failure: it means this company does not report under that tag.
     """
+    response = client.get(
+        f"{BASE}/api/xbrl/companyconcept/CIK{int(cik):010d}/us-gaap/{name}.json"
+    )
+    if response.status_code == 404:
+        return None
+    response.raise_for_status()
+    return response.json()
+
+
+def periods(payload: dict) -> int:
+    """
+    How many distinct periods a concept covers, which is the measure of whether
+    it is this company's definition or a tag it used for two years.
+    """
+    return len({fact["period_end"] for fact in facts(payload)})
+
+
+def widest_concept(
+    client: httpx.Client, cik: str, names: list[str]
+) -> tuple[str, dict] | None:
+    found = []
     for name in names:
-        response = client.get(
-            f"{BASE}/api/xbrl/companyconcept/CIK{int(cik):010d}/us-gaap/{name}.json"
-        )
-        if response.status_code == 404:
+        payload = concept(client, cik, name)
+        if payload is None:
             continue
-        response.raise_for_status()
-        return name, response.json()
-    return None
+        found.append((periods(payload), name, payload))
+
+    if not found:
+        return None
+
+    """
+    Ties break on the order the candidates were listed, which is the order they
+    are preferred in, so a company reporting the same span under two tags gets
+    the one this project considers the more specific definition.
+    """
+    best = max(found, key=lambda item: (item[0], -names.index(item[1])))
+    return best[1], best[2]
 
 
 def facts(payload: dict, unit: str | None = None) -> list[dict]:
@@ -269,10 +337,99 @@ def facts(payload: dict, unit: str | None = None) -> list[dict]:
                 "fiscal_period": item.get("fp"),
                 "form": item.get("form"),
                 "filed": item["filed"],
+                "accession": item.get("accn"),
                 "frame": item.get("frame"),
             }
         )
     return rows
+
+
+"""
+A fact's vintage is the day it was filed, and a day is not an instant. Writing
+it as midnight would claim the number was readable eight hours before anyone
+could have read it, which is the one direction this schema refuses.
+
+Two ways out, and both are used. The submission history carries the acceptance
+instant for every filing, so an accession found there is stamped to the second
+by the publisher. An accession that is not there, which happens once a company
+has filed past the thousand rows the recent block holds, falls back to the end
+of the filing day in New York. That is late rather than early, so a backtest is
+denied something the market already had and is never handed something it did
+not.
+"""
+FILING_ZONE = ZoneInfo("America/New_York")
+
+
+def acceptance_instants(payload: dict) -> dict[str, datetime]:
+    return {row["accession"]: row["accepted_at"] for row in filings(payload)}
+
+
+def available_from(filed: str, accepted: datetime | None) -> tuple[datetime, str]:
+    if accepted is not None:
+        return accepted, "acceptance"
+
+    day = date.fromisoformat(filed) + timedelta(days=1)
+    return datetime.combine(day, time.min, FILING_ZONE), "filing_day_end"
+
+
+def reported(client: httpx.Client, cik: str, measures: list[str] | None = None) -> list[dict]:
+    """
+    Every measure this project knows how to read, for one company, as flat
+    rows carrying the concept that answered.
+
+    Every candidate concept is asked, and the one covering the most periods is
+    kept whole. Asking all of them is what makes the choice a measurement
+    rather than a guess, and keeping only one is what stops a company reporting
+    the same quarter twice under two definitions from becoming two series
+    stitched into one.
+    """
+    rows = []
+    for measure in measures or list(CONCEPTS):
+        found = widest_concept(client, cik, CONCEPTS[measure])
+        if found is None:
+            continue
+        name, payload = found
+        for fact in facts(payload):
+            rows.append({**fact, "measure": measure, "concept": name})
+    return rows
+
+
+def ingest_facts(
+    conn, cik: str, rows: list[dict], acceptance: dict[str, datetime]
+) -> int:
+    written = 0
+    for row in rows:
+        moment, stamp = available_from(
+            row["filed"], acceptance.get(row["accession"])
+        )
+        result = conn.execute(
+            """
+            insert into basis.company_fact
+              (cik, measure, concept, unit, period_start, period_end,
+               fiscal_year, fiscal_period, form, accession, value, filed,
+               available_at, stamp)
+            values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            on conflict do nothing
+            """,
+            (
+                str(int(cik)),
+                row["measure"],
+                row["concept"],
+                row["unit"],
+                row["period_start"],
+                row["period_end"],
+                row["fiscal_year"],
+                row["fiscal_period"],
+                row["form"],
+                row["accession"],
+                row["value"],
+                row["filed"],
+                moment,
+                stamp,
+            ),
+        )
+        written += result.rowcount
+    return written
 
 
 def event_key(row: dict) -> str:

@@ -245,6 +245,21 @@ export type Quote = {
   source: string;
 };
 
+/*
+  What the company's own history implied for the quarter it was about to
+  report, beside what it reported. The expectation is a rule over its filings
+  and not a consensus, so it is modelled where the release instant is measured,
+  and the interface has to keep the two apart.
+*/
+export type Reading = {
+  expected: number;
+  actual: number;
+  surprise: number;
+  period_end: string;
+  rule: string;
+  origin: string;
+};
+
 export type EarningsRelease = {
   event_key: string;
   accepted_at: string;
@@ -252,6 +267,7 @@ export type EarningsRelease = {
   form: string | null;
   items: string | null;
   accession: string | null;
+  against: Record<string, Reading> | null;
 };
 
 /*
