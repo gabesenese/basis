@@ -5,3 +5,4 @@ create platform that uses claude's financial models, it will learn and analyze n
 Get Access to data real time
 
 Fees? Trading fees?
+
