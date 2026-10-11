@@ -563,6 +563,113 @@ change before React flushes, because anything painting itself from the
 stylesheet reads the custom properties during its layout effect, and flushing
 first paints it in the theme being left.
 
+### The expectation, and what a naive one is worth
+
+A gap is not a surprise until there is a number the release can be read
+against, and until 2026-09-13 there was none. The earnings marks on the chart
+sat at the SEC's acceptance instant over a price series and said only that
+something had been published. Six NVIDIA results had produced next session gaps
+from -0.66 to +6.30 percent and nothing in the store could say which of them was
+news.
+
+Consensus is sold rather than given. What is free is the company's own filings,
+so the expectation built here is the same quarter a year ago carried forward by
+the drift of the four quarters since, taken from XBRL and formed only from
+filings accepted strictly before the release. It is a weak forecast on purpose.
+Analysts know about a launch, a guidance cut and a currency move; this rule
+knows four numbers. Every result measured against it is therefore a floor, and
+what a bought consensus is worth is the difference between it and this.
+
+Three measurement problems had to be solved before the number meant anything,
+and each was a defect first.
+
+**XBRL publishes periods rather than quarters.** A 10-Q states its own quarter
+and the year to date, and a 10-K states the year and never the fourth quarter,
+because no quarterly report covers it. Reading only the ninety day durations
+drops one release in four, and the one it drops is the annual, which is the
+release a company says the most at. The fourth quarter is therefore derived as
+the year minus the nine months inside it, matched on the period start rather
+than on a calendar quarter, and marked as derived. Dropping all 214 derived
+quarters leaves the result stronger rather than weaker, so the subtraction is
+not carrying it.
+
+**The first concept that answers is not the company's concept.** Apple reports
+revenue under `RevenueFromContractWithCustomerExcludingAssessedTax` and NVIDIA
+under `Revenues`. Trying the candidates in order and stopping at the first that
+answers handed NVIDIA a five year stub ending in 2022, which is worse than no
+series because it looks like one. Every candidate is now asked and the one
+covering the most periods is taken whole, which moved NVIDIA's revenue from 12
+quarters to 73.
+
+**A split changes the share count and nothing else.** Prices already survive
+this, because the feed restates the whole series and a return is invariant under
+it. Earnings per share does not, because XBRL states each fact in the units in
+force when it was filed. NVIDIA's quarter to April 2024 is 5.98 a share as
+filed and 0.60 after the ten for one split in June, and both rows are in the
+store. Read raw, the rule expected 14.32 a share against an actual of 0.76 and
+called it a surprise of -7.5 standard deviations. A fact's units are set by its
+filing date, so expressing it at a later instant divides by every split between
+the two, and a row already filed after the split is divided by nothing and
+agrees with the restated one. The same event then reads -0.77, which is what the
+revenue line said all along.
+
+The `recent` block of a submission history holds a thousand filings and how far
+back that reaches depends on how much a company files. Apple's thousand go back
+to 2015 and NVIDIA's stopped in 2020, because NVIDIA's insiders file more often,
+which would have given one company eleven years of results and the other five
+for a reason that has nothing to do with either company. The older pages are
+published beside it and are now read in full: NVIDIA goes from 26 releases to 94.
+
+### The earnings gate, answered on 2026-09-13
+
+Thirty companies, 163,000 daily sessions, 36,833 XBRL facts, 2,635 releases and
+2,448 expectations. The panel is 1,515 releases over 28 companies from
+2010-10-28 to 2026-09-10, and none of the 2,460 rows had its actual on file
+before the release it is measured at.
+
+**The event is real.** The median absolute move on a result session is 2.94
+percent against 0.86 percent across 148,014 ordinary sessions, a factor of 3.44.
+That is the equity analogue of the 6.8 measured on FOMC afternoons, and it says
+the same thing: something happens here, whatever predicts it.
+
+**Revenue surprise predicts nothing.** Every interval straddles zero at every
+horizon, R2 rounds to zero, and the direction test is 52.6 percent with a 95
+percent interval of [49.6, 55.6]. Dropping the derived quarters leaves -0.010.
+
+**Earnings per share surprise does something small and it survives every check.**
+The opening gap moves +0.273 percent per standard deviation of surprise, HC3
+[+0.108, +0.438] and bootstrap [+0.109, +0.440]. Clustered on the company, which
+is the only honest reading when 24 names contribute 1,357 correlated rows, it is
++0.273 with [+0.070, +0.476] and p 0.008. The full session is +0.208 [+0.017,
++0.399] and five sessions is +0.259 [+0.016, +0.503]. Holding out each company
+in turn leaves the session slope between +0.153 and +0.237, always the same
+sign, with the lowest reading obtained without Amazon. Dropping every derived
+fourth quarter leaves +0.263 [+0.106, +0.420]. The direction is right in 730 of
+1,356 sessions, 53.8 percent [51.1, 56.5], p 0.005.
+
+**And it is nowhere near enough to trade.** R2 is 0.009 at the gap and 0.004 at
+the session. A one standard deviation surprise shifts the expected move by about
+a quarter of a percent inside a session whose typical move is 2.94 percent, so
+the sign is real and the variance around it is the entire trade. Magnitude does
+not track either: the rank correlation between the size of the surprise and the
+size of the move is +0.034, p 0.213.
+
+What that combination measures is precisely the thing this lane was built to
+measure. The move is large, it is directionally related to the numbers, and the
+company's own history explains almost none of it. The missing quantity is the
+expectation, not the event. This is now a floor with a number on it, and any
+consensus feed has to beat +0.273 percent per sigma and an R2 of 0.009 to have
+been worth buying.
+
+Standing caveats. The thirty names were chosen today as large companies that
+exist today, so the panel is survivorship selected and every result should be
+read as applying to large surviving caps rather than to listed companies. The
+actual is read from XBRL, which arrives with the 10-Q weeks after the release,
+so this measures ex post what a live signal would have to read out of the press
+release itself, and reading it out of the release is what the text labeller is
+for. And a naive expectation is a floor in one direction only: it can understate
+what consensus is worth and cannot overstate it.
+
 ## Phases
 
 Each phase ends on a checkable condition. A phase is not done because the code
@@ -1000,3 +1107,24 @@ refuses to hide.
 Blocked on a key rather than on a decision. Recommended is Finnhub for the first
 pass, because it costs nothing and proves the plumbing, with the paid tape
 reconsidered once there is a signal worth paying to execute.
+
+**7. Equity consensus, and what it now has to beat.** The expectation on the
+company screen is the company's own history, and on 2026-09-13 that floor was
+measured: +0.273 percent of opening gap per standard deviation of earnings per
+share surprise, R2 0.009, direction right 53.8 percent of the time. Revenue
+adds nothing.
+
+So the question is no longer whether an expectation is needed, it is what a real
+one is worth over that floor, and the answer decides whether this becomes a
+signal or stays a reading. Two free routes remain before anything is bought.
+The company's own prior guidance is filed inside EDGAR in the same 8-K exhibits
+already collected, which makes it an expectation that is published, archived and
+carried with an acceptance instant, and reading it out of the prose is what the
+text labeller was written for and what the Anthropic key blocks. And the
+analyst estimate itself is quoted by several feeds under terms that permit
+personal use, which is a licence question rather than a price.
+
+Nothing here should be bought until the guidance route has been tried, because
+it costs one key that is already needed for the FOMC lane, and because a
+guidance number and an analyst number answer different questions: one is what
+the company promised and the other is what the market believed.

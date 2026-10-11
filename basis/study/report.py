@@ -219,3 +219,111 @@ def render_cross(conn, window: str = "5m") -> None:
             f"  and its own {window} to 2h move: rho={float(test.statistic):+.3f}, "
             f"p={float(test.pvalue):.3f}"
         )
+def render_earnings(conn) -> None:
+    """
+    The earnings gate, printed in the order it has to be read: how much of a
+    sample there is, whether a result day is a different kind of day at all,
+    and only then whether the surprise explains the size of the move.
+    """
+    from basis.study import earnings
+
+    result = earnings.assemble(conn)
+    coverage = result["coverage"]
+
+    print("Earnings gate. Does a result, read against what the company's own")
+    print("history implied, explain what its shares did next.")
+    print()
+
+    if not coverage["events"]:
+        print("No panel. Collect facts and build expectations first.")
+        return
+
+    print(
+        f"Releases with an expectation and a price: {coverage['events']} "
+        f"over {coverage['companies']} companies, {coverage['rows']} rows"
+    )
+    print(f"Coverage: {coverage['first'][:10]} to {coverage['last'][:10]}")
+
+    versus = result["event_versus_ordinary"]
+    if versus["ordinary_median_pct"]:
+        print(
+            f"Result session {versus['event_median_pct']:.2f} percent against "
+            f"{versus['ordinary_median_pct']:.2f} on {versus['ordinary_n']} ordinary "
+            f"sessions, a factor of {versus['ratio']:.2f}"
+        )
+    print()
+
+    for measure, block in result["by_measure"].items():
+        if not block.get("tested"):
+            print(f"{measure}: {block['events']} events, too few to test.")
+            print()
+            continue
+
+        print(
+            f"{measure}: {block['events']} releases over {block['companies']} "
+            f"companies, {block['derived_actuals']} fourth quarters derived, "
+            f"{block['known_before_release']} filed before the release"
+        )
+
+        for horizon, fit in block["by_horizon"].items():
+            mark = "*" if fit["excludes_zero"] else " "
+            print(
+                f"  {mark}{horizon:<14} n={fit['n']:<5} R2={fit['r_squared']:5.3f}  "
+                f"{fit['estimate']:+7.3f} percent per sigma   "
+                f"HC3 [{fit['robust_low']:+7.3f}, {fit['robust_high']:+7.3f}]   "
+                f"boot [{fit['boot_low']:+7.3f}, {fit['boot_high']:+7.3f}]"
+            )
+
+        for horizon, fit in block["clustered"].items():
+            if fit is None:
+                continue
+            mark = "*" if fit["excludes_zero"] else " "
+            print(
+                f"  {mark}{horizon:<14} clustered on the company, "
+                f"{fit['companies']} clusters   {fit['estimate']:+7.3f}   "
+                f"[{fit['cluster_low']:+7.3f}, {fit['cluster_high']:+7.3f}]   "
+                f"p={fit['p_value']:.3f}"
+            )
+
+        for horizon, span in block["leave_one_company_out"].items():
+            if span is None:
+                continue
+            verdict = "keeps its sign" if span["holds_sign"] else "changes sign"
+            print(
+                f"   {horizon:<14} leave one company out: "
+                f"[{span['low']:+7.3f}, {span['high']:+7.3f}], {verdict}, "
+                f"lowest without {span['lowest_without']}"
+            )
+
+        reported = block["reported_only"]
+        if reported is not None:
+            mark = "*" if reported["excludes_zero"] else " "
+            print(
+                f"  {mark}reported quarters only, no derived fourth quarter: "
+                f"n={reported['n']}  {reported['estimate']:+7.3f}   "
+                f"[{reported['cluster_low']:+7.3f}, {reported['cluster_high']:+7.3f}]"
+            )
+
+        agreement = block["sign_agreement"]
+        if agreement.get("n"):
+            print(
+                f"  direction: {agreement['agree']} of {agreement['n']} sessions "
+                f"move the way the surprise points, "
+                f"{100 * agreement['rate']:.1f}% "
+                f"[{100 * agreement['low']:.1f}, {100 * agreement['high']:.1f}] "
+                f"p={agreement['p_value']:.3f}"
+            )
+
+        magnitude = block["magnitude"]
+        print(
+            f"  magnitude: rank correlation between surprise size and move size "
+            f"rho={magnitude['spearman']:+.3f} p={magnitude['p_value']:.3f} "
+            f"n={magnitude['n']}"
+        )
+        print()
+
+    print("* marks a slope whose intervals exclude zero.")
+    print()
+    print("The expectation is the company's own history carried forward, not a")
+    print("consensus. Whatever these slopes are, a bought consensus has to beat")
+    print("them to be worth paying for.")

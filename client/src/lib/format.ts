@@ -36,6 +36,22 @@ export function signed(
 }
 
 /*
+  A quarter's revenue is tens of billions and a quarter's earnings per share is
+  about a dollar, and the two sit in the same table. Printing the first in full
+  would make the column wider than the screen and would ask the reader to count
+  digits to tell forty billion from four hundred, which is a comparison the eye
+  should make without arithmetic.
+*/
+export function compact(language: Language, value: number | null | undefined): string {
+  if (value === null || value === undefined || Number.isNaN(value)) return "—";
+  if (Math.abs(value) < 1000) return number(language, value, 2);
+  return value.toLocaleString(LOCALE[language], {
+    notation: "compact",
+    maximumFractionDigits: 1,
+  });
+}
+
+/*
   EUR/USD quotes how many dollars buy one euro, so the symbol on a spot price
   is the quote currency's and never the base's. It comes from the instrument
   row rather than from the pair's name.
